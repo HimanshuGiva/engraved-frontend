@@ -5,12 +5,10 @@ import { Sparkles, Ruler, ArrowRight } from 'lucide-react';
 
 interface JewelrySelectorProps {
   onSelectJewelry: (item: JewelryItem) => void;
-  selectedItem: JewelryItem | null;
 }
 
 export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
   onSelectJewelry,
-  selectedItem,
 }) => {
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
 
@@ -88,18 +86,20 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
       </div>
 
       {/* Products Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredItems.map((item) => {
-          const isSelected = selectedItem?.id === item.id;
-
-          return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+        {filteredItems.map((item) => (
             <div
               key={item.id}
-              className={`rounded-2xl bg-white border transition-all overflow-hidden flex flex-col ${
-                isSelected
-                  ? 'border-[#C5A059] ring-2 ring-[#C5A059]/25'
-                  : 'border-[#E8E2D5] hover:border-[#C5A059]/50 hover:shadow-[0_6px_20px_rgba(0,0,0,0.05)]'
-              }`}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelectJewelry(item)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectJewelry(item);
+                }
+              }}
+              className="group relative rounded-3xl bg-white border border-[#E8E2D5] hover:border-[#C5A059]/60 hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition-all duration-300 overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C5A059]/50"
             >
               {/* Image */}
               <div className="relative h-56 bg-[#F7F4EE]">
@@ -136,23 +136,16 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
                     </div>
                     <div className="text-[11px] text-[#8A857C] mt-1">+ ₹{item.engravingFeeInr} engraving</div>
                   </div>
-
-                  <button
-                    onClick={() => onSelectJewelry(item)}
-                    className={`px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-wide flex items-center space-x-1.5 transition-all shrink-0 ${
-                      isSelected
-                        ? 'bg-[#C5A059] text-white'
-                        : 'bg-[#121214] text-white hover:bg-[#C5A059]'
-                    }`}
+                  <span
+                    className="px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest flex items-center space-x-2 transition-all shadow-2xs bg-[#121214] text-white group-hover:bg-[#C5A059]"
                   >
-                    <span>{isSelected ? 'Selected' : 'Select'}</span>
+                    <span>Personalize</span>
                     <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  </span>
                 </div>
               </div>
             </div>
-          );
-        })}
+        ))}
       </div>
 
     </div>

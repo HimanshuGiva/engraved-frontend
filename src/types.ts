@@ -66,6 +66,8 @@ export interface AiOption {
   id: string;
   title: string;
   svgCode: string;
+  /** PNG data URL for reliable modal previews */
+  previewUrl: string;
   styleTag: string;
 }
 

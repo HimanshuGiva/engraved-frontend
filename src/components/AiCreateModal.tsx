@@ -228,11 +228,14 @@ export const AiCreateModal: React.FC<AiCreateModalProps> = ({
                       </span>
                     </div>
 
-                    {/* SVG Vector Display Container */}
-                    <div
-                      className="w-full h-44 bg-white rounded-xl p-4 flex items-center justify-center border border-[#E8E2D5] text-[#121214] group-hover:scale-102 transition-transform"
-                      dangerouslySetInnerHTML={{ __html: opt.svgCode }}
-                    />
+                    {/* PNG preview — img is reliable; SVG-wrapped PNGs often fail in modals */}
+                    <div className="w-full h-44 bg-white rounded-xl p-4 flex items-center justify-center border border-[#E8E2D5] overflow-hidden group-hover:scale-102 transition-transform">
+                      <img
+                        src={opt.previewUrl}
+                        alt={opt.title}
+                        className="max-w-full max-h-full w-full h-full object-contain"
+                      />
+                    </div>
                   </div>
 
                   <button
