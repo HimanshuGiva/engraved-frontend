@@ -10,8 +10,8 @@ interface CanvasWorkspaceProps {
   selectedElementId: string | null;
   activeTool: ToolMode;
   onSelectElement: (id: string | null) => void;
-  onUpdateElement: (updated: CanvasElement) => void;
-  onAddElement: (element: CanvasElement) => void;
+  onUpdateElement: (updated: CanvasElement, select?: boolean) => void;
+  onAddElement: (element: CanvasElement, select?: boolean) => void;
   onSelectTool?: (tool: ToolMode) => void;
   onOpenAiModal: () => void;
   onOpenUploadModal: () => void;
@@ -62,6 +62,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
   const [currentDrawPoints, setCurrentDrawPoints] = useState<{ x: number; y: number }[]>([]);
+  const drawingSelectionTimeoutRef = useRef<number | null>(null);
+  const pendingSelectionIdRef = useRef<string | null>(null);
 
   // Freehand drawing SESSION tracking — a session is every stroke drawn
   // between picking up the pencil and an explicit "I'm done" signal
@@ -85,8 +87,27 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   // Leaving the Draw tool is the explicit "I'm done with this drawing"
   // signal — the next time Draw is selected, a fresh stroke starts a brand
   // new layer rather than resuming the old one.
+  const clearPendingDrawSelection = () => {
+    if (drawingSelectionTimeoutRef.current !== null) {
+      window.clearTimeout(drawingSelectionTimeoutRef.current);
+      drawingSelectionTimeoutRef.current = null;
+    }
+    pendingSelectionIdRef.current = null;
+  };
+
+  const scheduleSelectDrawElement = (id: string) => {
+    clearPendingDrawSelection();
+    pendingSelectionIdRef.current = id;
+    drawingSelectionTimeoutRef.current = window.setTimeout(() => {
+      onSelectElement(id);
+      drawingSelectionTimeoutRef.current = null;
+      pendingSelectionIdRef.current = null;
+    }, 3000);
+  };
+
   useEffect(() => {
     if (activeTool !== 'draw') {
+      clearPendingDrawSelection();
       endDrawSession();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,6 +190,9 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
       const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
+      if (drawingSelectionTimeoutRef.current !== null) {
+        clearPendingDrawSelection();
+      }
       setIsDrawingFreehand(true);
       setCurrentDrawPoints([{ x: xPct, y: yPct }]);
     } else if (activeTool === 'erase') {
@@ -270,8 +294,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                 height: merged.height,
               };
               lastCommittedSessionContentRef.current = merged.content;
-              onUpdateElement(updatedElement);
-              onSelectElement(updatedElement.id);
+              onUpdateElement(updatedElement, false);
+              scheduleSelectDrawElement(updatedElement.id);
               setDrawSessionStrokes(sessionStrokes);
             } else {
               // Session element vanished (e.g. deleted from the Layers
@@ -296,8 +320,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             lastCommittedSessionContentRef.current = merged.content;
             setDrawSessionElementId(newDrawElement.id);
             setDrawSessionStrokes(sessionStrokes);
-            onAddElement(newDrawElement);
-            onSelectElement(newDrawElement.id);
+            onAddElement(newDrawElement, false);
+            scheduleSelectDrawElement(newDrawElement.id);
           }
         }
       }
@@ -457,6 +481,12 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   } as React.CSSProperties)
                 : {};
 
+              const wrapperRingClass = isSelected
+                ? 'ring-2 ring-[#C5A059] rounded'
+                : activeTool !== 'draw'
+                ? 'hover:ring-1 hover:ring-[#C5A059]/50'
+                : '';
+
               return (
                 <div
                   key={el.id}
@@ -474,9 +504,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                     transform: `translate(-50%, -50%) rotate(${el.rotation}deg)`,
                     zIndex: el.zIndex,
                   }}
-                  className={`group absolute cursor-grab active:cursor-grabbing transition-shadow ${
-                    isSelected ? 'ring-2 ring-[#C5A059] rounded' : 'hover:ring-1 hover:ring-[#C5A059]/50'
-                  }`}
+                  className={`group absolute cursor-grab active:cursor-grabbing transition-shadow ${wrapperRingClass}`}
                 >
                   {/* Element Content Render — masked by any eraser layers targeting it */}
                   <div className="w-full h-full" style={contentStyle}>
