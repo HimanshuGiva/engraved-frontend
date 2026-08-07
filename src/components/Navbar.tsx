@@ -28,10 +28,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
           <div className="flex items-center space-x-2">
             <span className="font-serif tracking-[0.25em] text-base font-semibold uppercase text-[#121214]">GIVA</span>
-            <span className="w-1 h-1 rounded-full bg-[#C5A059]" />
-            <span className="text-[10px] font-bold uppercase tracking-[0.2em] px-2.5 py-0.5 rounded-full bg-[#F7F4EE] text-[#C5A059] border border-[#E8E2D5]">
-              Atelier
-            </span>
           </div>
         </div>
 
@@ -108,23 +104,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-[11px] uppercase tracking-[0.15em] font-semibold">Confirm</span>
           </button>
         </nav>
-
-        {/* Store Location & Associate Mode Button */}
-        <div className="flex items-center space-x-3">
-          <div className="hidden lg:flex items-center space-x-2 text-xs font-medium uppercase tracking-wider bg-white px-3.5 py-1.5 rounded-full border border-[#E8E2D5] shadow-2xs">
-            <Store className="w-3.5 h-3.5 text-[#C5A059]" />
-            <span className="text-[#121214]">Indiranagar Atelier</span>
-          </div>
-
-          <button
-            onClick={onOpenAssociateMode}
-            className="flex items-center space-x-2 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest bg-[#121214] text-white hover:bg-[#C5A059] transition-all border border-[#121214] shadow-2xs"
-            title="GIVA Store Associate Handoff Mode"
-          >
-            <QrCode className="w-3.5 h-3.5 text-[#C5A059] group-hover:text-white" />
-            <span className="hidden sm:inline">Store Staff</span>
-          </button>
-        </div>
 
       </div>
     </header>
