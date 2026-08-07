@@ -112,7 +112,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               ? 'bg-[#FBF8F1] text-[#C5A059] font-bold border border-[#E6C687]'
               : 'hover:bg-[#FAF8F5] text-[#6E6A63] hover:text-[#121214]'
           }`}
-          title="Erase the selected layer, or click a layer first to pick which one to erase"
+          title="Erase across any layers your stroke crosses (undo to restore)"
         >
           <Eraser className="w-5 h-5 text-[#C5A059]" />
           <span>Erase</span>

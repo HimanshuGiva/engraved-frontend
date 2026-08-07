@@ -1,4 +1,4 @@
-import { CanvasElement, JewelryItem } from '../types';
+import { CanvasElement, CanvasRegion, JewelryItem, isErasableLayer } from '../types';
 
 /**
  * Preset outline paths for the Shapes tool, authored in a local 0-100
@@ -109,24 +109,35 @@ export function pointsToSvgPath(points: { x: number; y: number }[]): string {
   return d;
 }
 
-/**
- * Merges every stroke drawn so far in one continuous drawing session (from
- * pencil-down to an explicit tool switch/Done — NOT per pen-lift) into a
- * single element's worth of path data + bounding box.
- *
- * Why this exists: a customer handwriting a word or sketching an icon lifts
- * the pencil constantly (between letters, to dot an "i", to start a second
- * petal on a flower). If every lift produced its own layer, the result
- * would be a pile of independently-draggable fragments instead of one
- * movable/rotatable drawing — which is exactly the bad experience being
- * fixed here. So the caller accumulates every finished stroke of the
- * current session (each an array of {x,y} points in absolute canvas-%
- * space) and re-calls this on every new stroke; we recompute the union
- * bounding box across ALL of them and re-normalize every stroke into that
- * box's local 0-100 space, then join each stroke as its own subpath inside
- * one SVG `d` string (a single <path> renders disconnected "M" subpaths
- * fine, so strokes stay visually distinct while acting as one element).
- */
+/** Split canvas-space erase points into per-element local subpaths. */
+export function canvasPointsToLocalSubpaths(
+  canvasPoints: { x: number; y: number }[],
+  el: CanvasElement,
+  pointInBounds: (px: number, py: number, element: CanvasElement) => boolean,
+  toLocal: (px: number, py: number, element: CanvasElement) => { x: number; y: number }
+): { x: number; y: number }[][] {
+  const subpaths: { x: number; y: number }[][] = [];
+  let current: { x: number; y: number }[] = [];
+
+  for (const p of canvasPoints) {
+    if (pointInBounds(p.x, p.y, el)) {
+      current.push(toLocal(p.x, p.y, el));
+    } else if (current.length > 0) {
+      if (current.length > 1) subpaths.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 1) subpaths.push(current);
+  return subpaths;
+}
+
+export function subpathsToSvgPath(subpaths: { x: number; y: number }[][]): string {
+  return subpaths
+    .map((stroke) => pointsToSvgPath(stroke))
+    .filter(Boolean)
+    .join(' ');
+}
+
 export function buildFreehandSessionData(
   strokes: { x: number; y: number }[][]
 ): { content: string; x: number; y: number; width: number; height: number } | null {
@@ -193,7 +204,7 @@ export function generateCompositeSvg(elements: CanvasElement[], jewelry: Jewelry
     // customer saw while erasing on the live canvas.
     const relatedErasers = erasers.filter((e) => e.targetElementId === el.id);
     let maskAttr = '';
-    if (relatedErasers.length > 0) {
+    if (isErasableLayer(el.type) && relatedErasers.length > 0) {
       const maskId = `erase-mask-${el.id}`;
       const strokes = relatedErasers
         .map(
@@ -206,18 +217,6 @@ export function generateCompositeSvg(elements: CanvasElement[], jewelry: Jewelry
     }
 
     if (el.type === 'svg_ai' || el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
-      // AI/uploaded artwork, freehand strokes, and shapes are authored in a
-      // local 0-100 coordinate space whose own visual center sits at local
-      // (50, 50) — the same way the live editing canvas centers them via
-      // `transform: translate(-50%, -50%)`. So after scaling to the element's
-      // actual width/height we must re-center the shape on the origin BEFORE
-      // rotating/translating to (x, y). Without this, `translate(x, y)` places
-      // the artwork's local (0, 0) — not its center — at (x, y), shifting
-      // every such element down-and-right by roughly half its own box (e.g. a
-      // 50%-wide default element lands ~25 canvas units off), which is why
-      // designs looked wrong/misplaced (or clipped out of the safe area
-      // entirely) on the jewelry preview, the SVG download, and the store
-      // associate view.
       const shiftX = (-50 * sx).toFixed(3);
       const shiftY = (-50 * sy).toFixed(3);
       const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) translate(${shiftX}, ${shiftY}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
@@ -232,11 +231,9 @@ export function generateCompositeSvg(elements: CanvasElement[], jewelry: Jewelry
         elementsContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${el.content}" fill="none" stroke="#111111" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" />\n    </g>\n  </g>`;
       }
     } else if (el.type === 'text') {
-      // Text is drawn at local (0, 0) with text-anchor/dominant-baseline set
-      // to "middle", so (0, 0) already IS its own visual center — a plain
-      // translate(x, y) places it correctly, no re-centering needed.
+      // Text is never erasable — render without any eraser mask.
       const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
-      elementsContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n    </g>\n  </g>`;
+      elementsContent += `\n  <g transform="${transform}">\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n  </g>`;
     }
   }
 

@@ -59,6 +59,19 @@ export interface CanvasElement {
   targetElementId?: string;
 }
 
+/** Layer types the eraser can affect — text is intentionally excluded. */
+export const ERASABLE_LAYER_TYPES: CanvasElementType[] = [
+  'svg_ai',
+  'freehand_draw',
+  'handwriting',
+  'shape',
+  'uploaded_image',
+];
+
+export function isErasableLayer(type: CanvasElementType): boolean {
+  return ERASABLE_LAYER_TYPES.includes(type);
+}
+
 /** Layers shown in the UI — eraser strokes are history-only, not listed. */
 export function isVisibleLayer(el: CanvasElement): boolean {
   return el.type !== 'eraser';

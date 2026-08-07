@@ -23,7 +23,9 @@ interface PropertiesPanelProps {
   elements: CanvasElement[];
   onSelectElement: (id: string | null) => void;
   onClearRegion: () => void;
-  onUpdateElement: (updated: CanvasElement) => void;
+  onUpdateElement: (updated: CanvasElement, select?: boolean, recordHistory?: boolean) => void;
+  onBeginElementEdit?: () => void;
+  onCommitElementEdit?: () => void;
   onDeleteElement: (id: string) => void;
   onDuplicateElement: (id: string) => void;
   onReorderElement: (id: string, direction: 'front' | 'back') => void;
@@ -40,6 +42,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onSelectElement,
   onClearRegion,
   onUpdateElement,
+  onBeginElementEdit,
+  onCommitElementEdit,
   onDeleteElement,
   onDuplicateElement,
   onReorderElement,
@@ -50,6 +54,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'properties' | 'layers'>('properties');
   const layers = visibleLayers(elements);
+
+  const sliderEditHandlers = {
+    onPointerDown: () => onBeginElementEdit?.(),
+    onPointerUp: () => onCommitElementEdit?.(),
+    onPointerCancel: () => onCommitElementEdit?.(),
+  };
 
   useEffect(() => {
     if (selectedElement) {
@@ -263,12 +273,18 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 <input
                   type="text"
                   value={selectedElement.content}
+                  onFocus={() => onBeginElementEdit?.()}
+                  onBlur={() => onCommitElementEdit?.()}
                   onChange={(e) =>
-                    onUpdateElement({
-                      ...selectedElement,
-                      content: e.target.value,
-                      name: `Text "${e.target.value}"`,
-                    })
+                    onUpdateElement(
+                      {
+                        ...selectedElement,
+                        content: e.target.value,
+                        name: `Text "${e.target.value}"`,
+                      },
+                      true,
+                      false
+                    )
                   }
                   className="w-full bg-white border border-[#E8E2D5] focus:border-[#C5A059] focus:outline-none rounded-xl px-3 py-2 text-xs text-[#121214] font-medium"
                 />
@@ -304,9 +320,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 min="10"
                 max="90"
                 value={selectedElement.width}
+                {...sliderEditHandlers}
                 onChange={(e) => {
                   const newW = parseFloat(e.target.value);
-                  onUpdateElement({ ...selectedElement, width: newW, height: newW });
+                  onUpdateElement({ ...selectedElement, width: newW, height: newW }, true, false);
                 }}
               className="w-full accent-[#C5A059] cursor-pointer"
             />
@@ -326,7 +343,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 min="-180"
                 max="180"
                 value={selectedElement.rotation}
-                onChange={(e) => onUpdateElement({ ...selectedElement, rotation: parseFloat(e.target.value) })}
+                {...sliderEditHandlers}
+                onChange={(e) =>
+                  onUpdateElement(
+                    { ...selectedElement, rotation: parseFloat(e.target.value) },
+                    true,
+                    false
+                  )
+                }
               className="w-full accent-[#C5A059] cursor-pointer"
             />
           </div>
@@ -351,7 +375,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 max={6}
                 step="0.5"
                 value={selectedElement.strokeWidth ?? 1}
-                onChange={(e) => onUpdateElement({ ...selectedElement, strokeWidth: parseFloat(e.target.value) })}
+                {...sliderEditHandlers}
+                onChange={(e) =>
+                  onUpdateElement(
+                    { ...selectedElement, strokeWidth: parseFloat(e.target.value) },
+                    true,
+                    false
+                  )
+                }
                 className="w-full accent-[#C5A059] cursor-pointer"
               />
               <div className="flex items-center space-x-1.5 pt-1">

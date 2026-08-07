@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { JewelryItem, CanvasElement, SavedDesignBundle, AiOption, CanvasRegion } from './types';
 import { JEWELRY_CATALOG } from './data/jewelryCatalog';
 import { Navbar } from './components/Navbar';
@@ -27,6 +27,14 @@ export default function App() {
   const [historyIndex, setHistoryIndex] = useState<number>(0);
 
   const currentElements = elementsHistory[historyIndex] || [];
+  const historyIndexRef = useRef(historyIndex);
+  historyIndexRef.current = historyIndex;
+  const interactionSnapshotRef = useRef<CanvasElement[] | null>(null);
+
+  const cloneElements = (els: CanvasElement[]) => els.map((el) => ({ ...el }));
+
+  const elementsEqual = (a: CanvasElement[], b: CanvasElement[]) =>
+    JSON.stringify(a) === JSON.stringify(b);
 
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<CanvasRegion | null>(null);
@@ -85,22 +93,74 @@ export default function App() {
 
   // Add Element to Canvas
   const handleAddElement = (newEl: CanvasElement, select = true) => {
-    const updated = [...currentElements, newEl];
+    handleAddElements([newEl], select);
+  };
+
+  const handleAddElements = (newEls: CanvasElement[], select = false) => {
+    if (!newEls.length) return;
+    const updated = [...currentElements, ...newEls];
     updateElementsWithHistory(updated);
     if (select) {
-      setSelectedElementId(newEl.id);
+      setSelectedElementId(newEls[newEls.length - 1].id);
       setSelectedRegion(null);
     }
   };
 
-  // Update existing element
-  const handleUpdateElement = (updatedEl: CanvasElement, select = true) => {
-    const updated = currentElements.map((el) => (el.id === updatedEl.id ? updatedEl : el));
-    updateElementsWithHistory(updated);
+  // Update existing element. recordHistory=false live-previews during slider
+  // drags without pushing undo steps; pair with begin/commit element edit.
+  const handleUpdateElement = (
+    updatedEl: CanvasElement,
+    select = true,
+    recordHistory = true
+  ) => {
+    const applyPatch = (base: CanvasElement[]) =>
+      base.map((el) => (el.id === updatedEl.id ? updatedEl : el));
+
+    if (recordHistory) {
+      updateElementsWithHistory(applyPatch(currentElements));
+    } else {
+      setElementsHistory((prev) => {
+        const next = [...prev];
+        const snapshot = prev[historyIndexRef.current] || [];
+        next[historyIndexRef.current] = applyPatch(snapshot);
+        return next;
+      });
+    }
+
     if (select) {
       setSelectedElementId(updatedEl.id);
       setSelectedRegion(null);
     }
+  };
+
+  const handleBeginElementEdit = () => {
+    interactionSnapshotRef.current = cloneElements(currentElements);
+  };
+
+  const handleCommitElementEdit = () => {
+    const snapshot = interactionSnapshotRef.current;
+    interactionSnapshotRef.current = null;
+    if (!snapshot) return;
+
+    const idx = historyIndexRef.current;
+    setElementsHistory((prev) => {
+      const current = prev[idx] ?? [];
+      if (elementsEqual(snapshot, current)) return prev;
+
+      const next = prev.slice(0, idx + 1);
+      next[idx] = snapshot;
+      next.push(current);
+      setHistoryIndex(next.length - 1);
+      return next;
+    });
+  };
+
+  const handleMoveElement = (id: string, x: number, y: number) => {
+    const target = currentElements.find((el) => el.id === id);
+    if (!target || (target.x === x && target.y === y)) return;
+    updateElementsWithHistory(
+      currentElements.map((el) => (el.id === id ? { ...el, x, y } : el))
+    );
   };
 
   // Delete element
@@ -426,7 +486,9 @@ export default function App() {
                     if (region) setSelectedElementId(null);
                   }}
                   onUpdateElement={handleUpdateElement}
+                  onMoveElement={handleMoveElement}
                   onAddElement={handleAddElement}
+                  onAddElements={handleAddElements}
                   onSelectTool={(tool) => setActiveTool(tool)}
                   onOpenAiModal={() => {
                     setRefiningElement(null);
@@ -449,6 +511,8 @@ export default function App() {
                   }}
                   onClearRegion={() => setSelectedRegion(null)}
                   onUpdateElement={handleUpdateElement}
+                  onBeginElementEdit={handleBeginElementEdit}
+                  onCommitElementEdit={handleCommitElementEdit}
                   onDeleteElement={handleDeleteElement}
                   onDuplicateElement={handleDuplicateElement}
                   onReorderElement={handleReorderElement}
