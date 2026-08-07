@@ -25,6 +25,7 @@ export const AiCreateModal: React.FC<AiCreateModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [options, setOptions] = useState<AiOption[]>([]);
   const [activeTabTitle, setActiveTabTitle] = useState<string>('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -82,6 +83,7 @@ export const AiCreateModal: React.FC<AiCreateModalProps> = ({
 
     setIsLoading(true);
     setOptions([]);
+    setErrorMessage(null);
 
     try {
       if (refiningSvg) {
@@ -95,6 +97,7 @@ export const AiCreateModal: React.FC<AiCreateModalProps> = ({
       }
     } catch (e) {
       console.error(e);
+      setErrorMessage(e instanceof Error ? e.message : 'AI generation failed');
     } finally {
       setIsLoading(false);
     }
@@ -248,8 +251,14 @@ export const AiCreateModal: React.FC<AiCreateModalProps> = ({
           </div>
         ) : (
           <div className="py-8 bg-[#FAF8F5] rounded-2xl border border-dashed border-[#E8E2D5] p-6 text-center text-xs text-[#6E6A63] space-y-2">
-            <p>Type your idea above (or tap microphone) and click <strong>Generate</strong>.</p>
-            <p className="text-[#8A857C]">You can scale, rotate, draw, and add handwriting after placing on canvas.</p>
+            {errorMessage ? (
+              <p className="text-red-600 font-medium">{errorMessage}</p>
+            ) : (
+              <>
+                <p>Type your idea above (or tap microphone) and click <strong>Generate</strong>.</p>
+                <p className="text-[#8A857C]">You can scale, rotate, draw, and add handwriting after placing on canvas.</p>
+              </>
+            )}
           </div>
         )}
 
