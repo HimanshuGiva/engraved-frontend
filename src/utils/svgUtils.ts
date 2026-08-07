@@ -33,13 +33,36 @@ export const SHAPE_LABELS: Record<string, string> = {
  */
 export function buildEraserMaskDataUri(erasers: CanvasElement[]): string | null {
   if (!erasers.length) return null;
+  // vector-effect="non-scaling-stroke" is the precision fix: this mask gets
+  // stretched non-uniformly by CSS (mask-size 100% 100%) to match whatever
+  // width x height box the target element actually renders at, which for
+  // any non-square element (nearly every hand-drawn stroke or AI vector)
+  // would otherwise distort a uniform stroke-width into a fat, lopsided
+  // ellipse — erasing a visibly larger area than the thin, constant-width
+  // pink line the user actually saw while dragging (that preview path uses
+  // the same non-scaling-stroke trick, which is why it looked precise while
+  // the committed erase didn't). This keeps the two in exact sync.
   const strokes = erasers
     .map(
       (e) =>
-        `<path d="${e.content}" fill="none" stroke="black" stroke-width="${e.strokeWidth ?? 8}" stroke-linecap="round" stroke-linejoin="round"/>`
+        `<path d="${e.content}" fill="none" stroke="black" stroke-width="${e.strokeWidth ?? 8}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`
     )
     .join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="0" y="0" width="100" height="100" fill="white"/>${strokes}</svg>`;
+  // The erased holes need to be REAL transparent pixels (alpha 0) in the
+  // rendered raster, not just "visually black" — when this data URI is fed
+  // straight to CSS `mask-image` (rather than referenced as an SVG <mask>
+  // element via `mask="url(#id)"`), browsers default `mask-mode` to `alpha`
+  // for plain images, per the CSS Masking spec's `match-source` behavior
+  // ("if it [the mask reference] is an image, this value is treated as
+  // alpha"). A flat white rect + opaque black strokes is 100% opaque
+  // everywhere, so under alpha-mode masking nothing gets erased at all: the
+  // eraser stroke previews correctly but the release never actually cuts a
+  // hole. Wrapping the strokes in an inner SVG <mask> (which is ALWAYS
+  // luminance-evaluated per SVG semantics, independent of the outer CSS
+  // mask-mode) and painting a masked rect bakes real alpha=0 into the
+  // stroke area before it's ever exposed to CSS masking, so it erases
+  // correctly under both alpha and luminance CSS mask-mode.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><mask id="erase-hole" maskContentUnits="userSpaceOnUse"><rect x="0" y="0" width="100" height="100" fill="white"/>${strokes}</mask></defs><rect x="0" y="0" width="100" height="100" fill="white" mask="url(#erase-hole)"/></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
