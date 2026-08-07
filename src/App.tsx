@@ -7,6 +7,7 @@ import { CanvasWorkspace } from './components/CanvasWorkspace';
 import { Toolbar, ToolMode } from './components/Toolbar';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { AiCreateModal } from './components/AiCreateModal';
+import { AiEnhanceModal } from './components/AiEnhanceModal';
 import { ImageUploadModal } from './components/ImageUploadModal';
 import { TextModal } from './components/TextModal';
 import { JewelryPreview } from './components/JewelryPreview';
@@ -31,10 +32,12 @@ export default function App() {
 
   // Modals & Drawers
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isEnhanceModalOpen, setIsEnhanceModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isTextModalOpen, setIsTextModalOpen] = useState(false);
   const [isStoreAssociateOpen, setIsStoreAssociateOpen] = useState(false);
   const [refiningElement, setRefiningElement] = useState<CanvasElement | null>(null);
+  const [enhancingElement, setEnhancingElement] = useState<CanvasElement | null>(null);
 
   // Saved Design
   const [savedBundle, setSavedBundle] = useState<SavedDesignBundle | null>(null);
@@ -169,6 +172,19 @@ export default function App() {
     }
   };
 
+  const handleApplyEnhance = (svgCode: string) => {
+    if (!enhancingElement) return;
+    setActiveTool('select');
+    handleUpdateElement({
+      ...enhancingElement,
+      type: 'svg_ai',
+      content: svgCode,
+      name: `Enhanced: ${enhancingElement.name}`,
+      isAiGenerated: true,
+    });
+    setEnhancingElement(null);
+  };
+
   // Handle Text Addition
   const handleAddText = () => {
     setIsTextModalOpen(true);
@@ -294,31 +310,33 @@ export default function App() {
         {currentStep === 'studio' && selectedJewelry && (
           <div className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 flex flex-col space-y-4">
             
-            {/* Studio Toolbar */}
-            <Toolbar
-              activeTool={activeTool}
-              onSelectTool={(tool) => setActiveTool(tool)}
-              onOpenAiModal={() => {
-                setRefiningElement(null);
-                setIsAiModalOpen(true);
-              }}
-              onOpenUploadModal={() => setIsUploadModalOpen(true)}
-              onAddText={handleAddText}
-              onAddShape={handleAddShape}
-              canUndo={historyIndex > 0}
-              canRedo={historyIndex < elementsHistory.length - 1}
-              onUndo={handleUndo}
-              onRedo={handleRedo}
-              onClear={handleClearCanvas}
-              eraserSize={eraserSize}
-              onEraserSizeChange={setEraserSize}
-            />
-
-            {/* Studio Main Workspace Layout (Center Canvas + Right Panel) */}
+            {/* Studio Main Workspace Layout (Tools + Canvas + Panel) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 items-start">
               
-              {/* Center Interactive Canvas (8 cols) */}
-              <div className="lg:col-span-8 flex flex-col items-center justify-center min-h-[500px]">
+              {/* Left tools sidebar */}
+              <div className="lg:col-span-2">
+                <Toolbar
+                  activeTool={activeTool}
+                  onSelectTool={(tool) => setActiveTool(tool)}
+                  onOpenAiModal={() => {
+                    setRefiningElement(null);
+                    setIsAiModalOpen(true);
+                  }}
+                  onOpenUploadModal={() => setIsUploadModalOpen(true)}
+                  onAddText={handleAddText}
+                  onAddShape={handleAddShape}
+                  canUndo={historyIndex > 0}
+                  canRedo={historyIndex < elementsHistory.length - 1}
+                  onUndo={handleUndo}
+                  onRedo={handleRedo}
+                  onClear={handleClearCanvas}
+                  eraserSize={eraserSize}
+                  onEraserSizeChange={setEraserSize}
+                />
+              </div>
+
+              {/* Center Interactive Canvas (6 cols) */}
+              <div className="lg:col-span-6 flex flex-col items-center justify-center min-h-[500px]">
                 <CanvasWorkspace
                   jewelry={selectedJewelry || JEWELRY_CATALOG[0]}
                   elements={currentElements}
@@ -350,6 +368,10 @@ export default function App() {
                   onOpenAiRefine={(el) => {
                     setRefiningElement(el);
                     setIsAiModalOpen(true);
+                  }}
+                  onOpenAiEnhance={(el) => {
+                    setEnhancingElement(el);
+                    setIsEnhanceModalOpen(true);
                   }}
                 />
 
@@ -398,6 +420,21 @@ export default function App() {
           jewelry={selectedJewelry}
           onSelectOption={handleSelectAiOption}
           refiningSvg={refiningElement?.content}
+        />
+      )}
+
+      {enhancingElement && (
+        <AiEnhanceModal
+          isOpen={isEnhanceModalOpen}
+          onClose={() => {
+            setIsEnhanceModalOpen(false);
+            setEnhancingElement(null);
+          }}
+          element={enhancingElement}
+          eraserLayers={currentElements.filter(
+            (el) => el.type === 'eraser' && el.targetElementId === enhancingElement.id
+          )}
+          onApply={handleApplyEnhance}
         />
       )}
 

@@ -62,8 +62,11 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
   const [currentDrawPoints, setCurrentDrawPoints] = useState<{ x: number; y: number }[]>([]);
+  const drawPointsRef = useRef<{ x: number; y: number }[]>([]);
+  const drawRafRef = useRef<number | null>(null);
   const drawingSelectionTimeoutRef = useRef<number | null>(null);
   const pendingSelectionIdRef = useRef<string | null>(null);
+  const activePointerIdRef = useRef<number | null>(null);
 
   // Freehand drawing SESSION tracking — a session is every stroke drawn
   // between picking up the pencil and an explicit "I'm done" signal
@@ -73,6 +76,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   // to move or resize as a single object.
   const [drawSessionElementId, setDrawSessionElementId] = useState<string | null>(null);
   const [drawSessionStrokes, setDrawSessionStrokes] = useState<{ x: number; y: number }[][]>([]);
+  const [pendingDrawSelectionId, setPendingDrawSelectionId] = useState<string | null>(null);
   // Tracks the content we last wrote to the session element, so we can tell
   // if something else (undo/redo/clear) touched it out from under us — in
   // that case we end the session rather than silently overwrite/redo it.
@@ -93,15 +97,18 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       drawingSelectionTimeoutRef.current = null;
     }
     pendingSelectionIdRef.current = null;
+    setPendingDrawSelectionId(null);
   };
 
   const scheduleSelectDrawElement = (id: string) => {
     clearPendingDrawSelection();
     pendingSelectionIdRef.current = id;
+    setPendingDrawSelectionId(id);
     drawingSelectionTimeoutRef.current = window.setTimeout(() => {
       onSelectElement(id);
       drawingSelectionTimeoutRef.current = null;
       pendingSelectionIdRef.current = null;
+      setPendingDrawSelectionId(null);
     }, 3000);
   };
 
@@ -190,8 +197,18 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
       const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
+      if (selectedElementId) {
+        onSelectElement(null);
+      }
       if (drawingSelectionTimeoutRef.current !== null) {
         clearPendingDrawSelection();
+      }
+      setPendingDrawSelectionId(null);
+      activePointerIdRef.current = e.pointerId;
+      drawPointsRef.current = [{ x: xPct, y: yPct }];
+      if (drawRafRef.current !== null) {
+        window.cancelAnimationFrame(drawRafRef.current);
+        drawRafRef.current = null;
       }
       setIsDrawingFreehand(true);
       setCurrentDrawPoints([{ x: xPct, y: yPct }]);
@@ -229,7 +246,13 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
       const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
-      setCurrentDrawPoints((prev) => [...prev, { x: xPct, y: yPct }]);
+      drawPointsRef.current.push({ x: xPct, y: yPct });
+      if (drawRafRef.current === null) {
+        drawRafRef.current = window.requestAnimationFrame(() => {
+          setCurrentDrawPoints([...drawPointsRef.current]);
+          drawRafRef.current = null;
+        });
+      }
     } else if (activeTool === 'erase' && eraseTargetId) {
       const target = elements.find((el) => el.id === eraseTargetId);
       if (!target) return;
@@ -267,6 +290,18 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       try {
         (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
       } catch {}
+      activePointerIdRef.current = null;
+    } else if (activePointerIdRef.current !== null && containerRef.current) {
+      try {
+        containerRef.current.releasePointerCapture(activePointerIdRef.current);
+      } catch {}
+      activePointerIdRef.current = null;
+    }
+
+    if (drawRafRef.current !== null) {
+      window.cancelAnimationFrame(drawRafRef.current);
+      drawRafRef.current = null;
+      setCurrentDrawPoints([...drawPointsRef.current]);
     }
 
     if (activeTool === 'draw' && isDrawingFreehand) {
@@ -326,6 +361,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
         }
       }
       setCurrentDrawPoints([]);
+      drawPointsRef.current = [];
     } else if (activeTool === 'erase' && eraseTargetId) {
       const target = elements.find((el) => el.id === eraseTargetId);
       if (target && eraseLocalPoints.length > 1) {
@@ -355,6 +391,18 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     }
 
     setDraggingId(null);
+  };
+
+  const handlePointerCancel = () => {
+    if (activeTool === 'draw' || activeTool === 'erase') {
+      handlePointerUp();
+    }
+  };
+
+  const handleLostPointerCapture = () => {
+    if (activeTool === 'draw' || activeTool === 'erase') {
+      handlePointerUp();
+    }
   };
 
   const startDragging = (e: React.PointerEvent | React.MouseEvent, el: CanvasElement) => {
@@ -411,6 +459,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onLostPointerCapture={handleLostPointerCapture}
             className={`relative bg-[#FAF8F5] border-2 border-[#E8E2D5] shadow-inner overflow-hidden select-none cursor-crosshair touch-none transition-all flex-shrink-0 ${getShapeStyle()}`}
           >
 
@@ -458,7 +508,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             {elements
               .filter((el) => el.type !== 'eraser')
               .map((el) => {
-              const isSelected = selectedElementId === el.id;
+              const isSelected =
+                selectedElementId === el.id &&
+                !isDrawingFreehand &&
+                pendingDrawSelectionId !== el.id;
 
               // Any eraser layers currently masking this element. Applied as
               // a CSS mask on a wrapper div so the element's own `content`
@@ -493,6 +546,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   onPointerDown={(e) => startDragging(e, el)}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (activeTool === 'erase' || isDrawingFreehand) return;
                     onSelectElement(el.id);
                   }}
                   style={{
@@ -503,6 +557,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                     height: `${el.height}%`,
                     transform: `translate(-50%, -50%) rotate(${el.rotation}deg)`,
                     zIndex: el.zIndex,
+                    pointerEvents: activeTool === 'draw' || activeTool === 'erase' ? 'none' : undefined,
                   }}
                   className={`group absolute cursor-grab active:cursor-grabbing transition-shadow ${wrapperRingClass}`}
                 >
