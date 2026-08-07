@@ -4,7 +4,7 @@ A polished prototype for a customer-facing jewelry personalization studio. Live-
 
 ## Product vision
 
-Live-Engrave is not an AI generator. It is a jewelry creation studio where customers say:
+Live-Engrave is not an AI generator. It is a jewelry creation studio where customers says:
 
 > “AI gives me a starting point. My creativity makes it mine.”
 

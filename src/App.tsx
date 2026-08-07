@@ -307,31 +307,33 @@ export default function App() {
         {currentStep === 'studio' && selectedJewelry && (
           <div className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 flex flex-col space-y-4">
             
-            {/* Studio Toolbar */}
-            <Toolbar
-              activeTool={activeTool}
-              onSelectTool={(tool) => setActiveTool(tool)}
-              onOpenAiModal={() => {
-                setRefiningElement(null);
-                setIsAiModalOpen(true);
-              }}
-              onOpenUploadModal={() => setIsUploadModalOpen(true)}
-              onAddText={handleAddText}
-              onAddShape={handleAddShape}
-              canUndo={historyIndex > 0}
-              canRedo={historyIndex < elementsHistory.length - 1}
-              onUndo={handleUndo}
-              onRedo={handleRedo}
-              onClear={handleClearCanvas}
-              eraserSize={eraserSize}
-              onEraserSizeChange={setEraserSize}
-            />
-
-            {/* Studio Main Workspace Layout (Center Canvas + Right Panel) */}
+            {/* Studio Main Workspace Layout (Tools + Canvas + Panel) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 items-start">
               
-              {/* Center Interactive Canvas (8 cols) */}
-              <div className="lg:col-span-8 flex flex-col items-center justify-center min-h-[500px]">
+              {/* Left tools sidebar */}
+              <div className="lg:col-span-2">
+                <Toolbar
+                  activeTool={activeTool}
+                  onSelectTool={(tool) => setActiveTool(tool)}
+                  onOpenAiModal={() => {
+                    setRefiningElement(null);
+                    setIsAiModalOpen(true);
+                  }}
+                  onOpenUploadModal={() => setIsUploadModalOpen(true)}
+                  onAddText={handleAddText}
+                  onAddShape={handleAddShape}
+                  canUndo={historyIndex > 0}
+                  canRedo={historyIndex < elementsHistory.length - 1}
+                  onUndo={handleUndo}
+                  onRedo={handleRedo}
+                  onClear={handleClearCanvas}
+                  eraserSize={eraserSize}
+                  onEraserSizeChange={setEraserSize}
+                />
+              </div>
+
+              {/* Center Interactive Canvas (6 cols) */}
+              <div className="lg:col-span-6 flex flex-col items-center justify-center min-h-[500px]">
                 <CanvasWorkspace
                   jewelry={selectedJewelry || JEWELRY_CATALOG[0]}
                   elements={currentElements}
