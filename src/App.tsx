@@ -7,6 +7,7 @@ import { CanvasWorkspace } from './components/CanvasWorkspace';
 import { Toolbar, ToolMode } from './components/Toolbar';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { AiCreateModal } from './components/AiCreateModal';
+import { AiEnhanceModal } from './components/AiEnhanceModal';
 import { ImageUploadModal } from './components/ImageUploadModal';
 import { TextModal } from './components/TextModal';
 import { JewelryPreview } from './components/JewelryPreview';
@@ -33,10 +34,12 @@ export default function App() {
 
   // Modals & Drawers
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isEnhanceModalOpen, setIsEnhanceModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isTextModalOpen, setIsTextModalOpen] = useState(false);
   const [isStoreAssociateOpen, setIsStoreAssociateOpen] = useState(false);
   const [refiningElement, setRefiningElement] = useState<CanvasElement | null>(null);
+  const [enhancingElement, setEnhancingElement] = useState<CanvasElement | null>(null);
 
   // Validation
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
@@ -181,6 +184,19 @@ export default function App() {
       };
       handleAddElement(newEl);
     }
+  };
+
+  const handleApplyEnhance = (svgCode: string) => {
+    if (!enhancingElement) return;
+    setActiveTool('select');
+    handleUpdateElement({
+      ...enhancingElement,
+      type: 'svg_ai',
+      content: svgCode,
+      name: `Enhanced: ${enhancingElement.name}`,
+      isAiGenerated: true,
+    });
+    setEnhancingElement(null);
   };
 
   // Handle Text Addition
@@ -380,6 +396,10 @@ export default function App() {
                     setRefiningElement(el);
                     setIsAiModalOpen(true);
                   }}
+                  onOpenAiEnhance={(el) => {
+                    setEnhancingElement(el);
+                    setIsEnhanceModalOpen(true);
+                  }}
                 />
 
                 {/* Primary CTA - Preview on Jewelry (Moved to right column below Properties/Layers) */}
@@ -427,6 +447,21 @@ export default function App() {
           jewelry={selectedJewelry}
           onSelectOption={handleSelectAiOption}
           refiningSvg={refiningElement?.content}
+        />
+      )}
+
+      {enhancingElement && (
+        <AiEnhanceModal
+          isOpen={isEnhanceModalOpen}
+          onClose={() => {
+            setIsEnhanceModalOpen(false);
+            setEnhancingElement(null);
+          }}
+          element={enhancingElement}
+          eraserLayers={currentElements.filter(
+            (el) => el.type === 'eraser' && el.targetElementId === enhancingElement.id
+          )}
+          onApply={handleApplyEnhance}
         />
       )}
 
