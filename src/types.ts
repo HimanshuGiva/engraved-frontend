@@ -26,6 +26,14 @@ export interface JewelryItem {
   popularSuggestion?: string;
 }
 
+/** Rectangular marquee on the engraving surface, in canvas percent (0–100). */
+export interface CanvasRegion {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 export type CanvasElementType = 'svg_ai' | 'freehand_draw' | 'handwriting' | 'text' | 'shape' | 'uploaded_image' | 'eraser';
 
 export interface CanvasElement {
@@ -79,4 +87,18 @@ export interface SavedDesignBundle {
   compositeSvg: string;
   validationPassed: boolean;
   totalPriceInr: number;
+  messageId?: string;
+}
+
+export type MessageContentType = 'text' | 'photo' | 'video';
+
+export interface GiftMessage {
+  id: string;
+  short_id: string;
+  view_url: string;
+  content_type: MessageContentType;
+  content: string;
+  media_url?: string | null;
+  qr_svg_url?: string | null;
+  created_at?: string;
 }

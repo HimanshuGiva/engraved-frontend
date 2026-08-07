@@ -9,6 +9,7 @@ import {
   Trash2,
   Image as ImageIcon,
   Eraser,
+  QrCode,
   Shapes,
   Square,
   Circle,
@@ -34,6 +35,7 @@ interface ToolbarProps {
   onSelectTool: (tool: ToolMode) => void;
   onOpenAiModal: () => void;
   onOpenUploadModal: () => void;
+  onOpenGiftQrModal: () => void;
   onAddText: () => void;
   onAddShape: (shapeType: string) => void;
   canUndo: boolean;
@@ -50,6 +52,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onSelectTool,
   onOpenAiModal,
   onOpenUploadModal,
+  onOpenGiftQrModal,
   onAddText,
   onAddShape,
   canUndo,
@@ -80,7 +83,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               ? 'bg-[#FBF8F1] text-[#C5A059] font-bold border border-[#E6C687]'
               : 'hover:bg-[#FAF8F5] text-[#6E6A63] hover:text-[#121214]'
           }`}
-          title="Select & Transform"
+          title="Click layers to select; drag on empty canvas to select a region"
         >
           <MousePointer className="w-5 h-5 text-[#C5A059]" />
           <span>Select</span>
@@ -166,6 +169,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         >
           <ImageIcon className="w-5 h-5 text-[#C5A059]" />
           <span>Upload</span>
+        </button>
+
+        {/* Gift Message QR */}
+        <button
+          onClick={onOpenGiftQrModal}
+          className="w-full inline-flex flex-col items-center justify-center gap-1 rounded-3xl py-3 text-[10px] uppercase tracking-wider hover:bg-[#FBF8F1] text-[#6E6A63] hover:text-[#C5A059] transition-all"
+          title="Upload gift media and add QR code"
+        >
+          <QrCode className="w-5 h-5 text-[#C5A059]" />
+          <span>Gift QR</span>
         </button>
       </div>
 

@@ -1,28 +1,36 @@
 import React, { useEffect, useState } from 'react';
 import { Sparkles, Wand2, ArrowRight, RefreshCw } from 'lucide-react';
-import { CanvasElement } from '../types';
+import { CanvasElement, CanvasRegion } from '../types';
 import { fetchAiEnhance, EnhanceMode } from '../services/aiService';
 import {
   captureElementAsPngDataUrl,
+  captureRegionAsPngDataUrl,
   defaultEnhanceMode,
 } from '../utils/canvasCapture';
 
 interface AiEnhanceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  element: CanvasElement;
-  eraserLayers: CanvasElement[];
+  label: string;
+  element?: CanvasElement;
+  eraserLayers?: CanvasElement[];
+  region?: CanvasRegion;
+  canvasElements?: CanvasElement[];
   onApply: (svgCode: string) => void;
 }
 
 export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
   isOpen,
   onClose,
+  label,
   element,
-  eraserLayers,
+  eraserLayers = [],
+  region,
+  canvasElements = [],
   onApply,
 }) => {
-  const [mode, setMode] = useState<EnhanceMode>(() => defaultEnhanceMode(element));
+  const isRegionMode = Boolean(region);
+  const [mode, setMode] = useState<EnhanceMode>('ai_generated');
   const [prompt, setPrompt] = useState('');
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [resultSvg, setResultSvg] = useState<string | null>(null);
@@ -33,27 +41,47 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    setMode(defaultEnhanceMode(element));
+    setMode(element ? defaultEnhanceMode(element) : 'ai_generated');
     setPrompt('');
     setResultSvg(null);
     setResultPreviewUrl(null);
     setErrorMessage(null);
+    setPreviewDataUrl(null);
 
     let cancelled = false;
-    captureElementAsPngDataUrl(element, eraserLayers)
-      .then((url) => {
-        if (!cancelled) setPreviewDataUrl(url);
-      })
-      .catch(() => {
-        if (!cancelled) setErrorMessage('Could not capture element preview');
-      });
+
+    const capturePreview = async () => {
+      try {
+        if (isRegionMode && region) {
+          const url = await captureRegionAsPngDataUrl(canvasElements, region);
+          if (!cancelled) setPreviewDataUrl(url);
+        } else if (element) {
+          const url = await captureElementAsPngDataUrl(element, eraserLayers);
+          if (!cancelled) setPreviewDataUrl(url);
+        }
+      } catch {
+        if (!cancelled) setErrorMessage('Could not capture preview');
+      }
+    };
+
+    capturePreview();
 
     return () => {
       cancelled = true;
     };
-  }, [isOpen, element, eraserLayers]);
+  }, [isOpen, element, eraserLayers, region, canvasElements, isRegionMode]);
 
   if (!isOpen) return null;
+
+  const captureForEnhance = async (): Promise<string> => {
+    if (isRegionMode && region) {
+      return captureRegionAsPngDataUrl(canvasElements, region);
+    }
+    if (element) {
+      return captureElementAsPngDataUrl(element, eraserLayers);
+    }
+    throw new Error('Nothing to enhance');
+  };
 
   const handleEnhance = async () => {
     setIsLoading(true);
@@ -62,7 +90,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
     setResultPreviewUrl(null);
 
     try {
-      const imageDataUrl = previewDataUrl ?? (await captureElementAsPngDataUrl(element, eraserLayers));
+      const imageDataUrl = previewDataUrl ?? (await captureForEnhance());
       const result = await fetchAiEnhance(imageDataUrl, mode, prompt);
       setResultSvg(result.svgCode);
       setResultPreviewUrl(result.previewUrl);
@@ -87,7 +115,8 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
               Polish for engraving
             </h2>
             <p className="text-[#6E6A63] text-xs mt-1">
-              Cleans noise and sharpens line art on <strong className="text-[#121214]">{element.name}</strong> for laser engraving.
+              Cleans noise and sharpens line art on{' '}
+              <strong className="text-[#121214]">{label}</strong> for laser engraving.
             </p>
           </div>
 

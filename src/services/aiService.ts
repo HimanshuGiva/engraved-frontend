@@ -2,7 +2,8 @@ import { AiOption, JewelryItem } from '../types';
 import { apiFetch } from './apiClient';
 
 interface BackendGenerateImage {
-  b64: string;
+  b64?: string;
+  svg: string;
   content_type: string;
 }
 
@@ -40,12 +41,16 @@ export async function fetchAiEngravingOptions(
   }
 
   const options: AiOption[] = data.images.slice(0, 2).map((img, idx) => {
-    const contentType = img.content_type || 'image/png';
+    const svgCode = img.svg || pngB64ToSvgWrapper(img.b64 || '', img.content_type || 'image/png');
+    const previewUrl =
+      img.content_type === 'image/svg+xml'
+        ? svgToDataUrl(svgCode)
+        : pngB64ToDataUrl(img.b64 || '', img.content_type || 'image/png');
     return {
       id: `opt-${idx}-${Date.now()}`,
       title: idx === 0 ? 'Option A' : 'Option B',
-      svgCode: pngB64ToSvgWrapper(img.b64, contentType),
-      previewUrl: pngB64ToDataUrl(img.b64, contentType),
+      svgCode,
+      previewUrl,
       styleTag: STYLE_TAGS[idx] ?? 'AI Generated',
     };
   });
@@ -59,7 +64,8 @@ export async function fetchAiEngravingOptions(
 export type EnhanceMode = 'ai_generated' | 'manual';
 
 interface BackendEnhanceResponse {
-  b64: string;
+  b64?: string;
+  svg: string;
   content_type: string;
   provider: string;
 }
@@ -79,13 +85,20 @@ export async function fetchAiEnhance(
     }),
   });
 
-  if (!data.b64) {
+  if (!data.svg) {
     throw new Error('AI returned no enhanced image');
   }
 
+  const svgCode =
+    data.svg ||
+    pngB64ToSvgWrapper(data.b64 || '', data.content_type || 'image/png');
+
   return {
-    svgCode: pngB64ToSvgWrapper(data.b64, data.content_type || 'image/png'),
-    previewUrl: pngB64ToDataUrl(data.b64, data.content_type || 'image/png'),
+    svgCode,
+    previewUrl:
+      data.content_type === 'image/svg+xml'
+        ? svgToDataUrl(svgCode)
+        : pngB64ToDataUrl(data.b64 || '', data.content_type || 'image/png'),
     provider: data.provider,
   };
 }
