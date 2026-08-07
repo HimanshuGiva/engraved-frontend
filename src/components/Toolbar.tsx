@@ -65,19 +65,44 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 }) => {
   const [isShapeMenuOpen, setIsShapeMenuOpen] = useState(false);
 
+  const pickTool = (tool: ToolMode, options?: { keepShapeMenu?: boolean }) => {
+    if (!options?.keepShapeMenu) {
+      setIsShapeMenuOpen(false);
+    }
+    onSelectTool(tool);
+  };
+
+  const toggleShapeMenu = () => {
+    if (isShapeMenuOpen) {
+      setIsShapeMenuOpen(false);
+      pickTool('select');
+      return;
+    }
+    setIsShapeMenuOpen(true);
+    pickTool('shape', { keepShapeMenu: true });
+  };
+
+  const openModalAction = (action: () => void) => {
+    pickTool('select');
+    action();
+  };
+
   return (
-    <div className="bg-white text-[#121214] p-4 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-[#E8E2D5] w-full max-w-[260px] flex flex-col gap-4">
+    <div
+      data-studio-toolbar
+      className="bg-white text-[#121214] p-4 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-[#E8E2D5] w-full max-w-[260px] flex flex-col gap-4"
+    >
       <button
-        onClick={onOpenAiModal}
+        onClick={() => openModalAction(onOpenAiModal)}
         className="w-full inline-flex items-center justify-center gap-2 rounded-3xl bg-[#121214] text-[#C5A059] border border-[#C5A059]/40 font-bold uppercase text-[11px] tracking-widest py-3 shadow-2xs hover:bg-[#C5A059] hover:text-white hover:border-[#C5A059] transition-all"
       >
         <Sparkles className="w-4 h-4 text-[#C5A059]" />
-        <span>Create AI</span>
+        <span>AI Creation</span>
       </button>
 
       <div className="grid gap-2">
         <button
-          onClick={() => onSelectTool('select')}
+          onClick={() => pickTool('select')}
           className={`w-full inline-flex flex-col items-center justify-center gap-1 rounded-3xl py-3 text-[10px] uppercase tracking-wider transition-all ${
             activeTool === 'select'
               ? 'bg-[#FBF8F1] text-[#C5A059] font-bold border border-[#E6C687]'
@@ -90,7 +115,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </button>
 
         <button
-          onClick={() => onSelectTool('draw')}
+          onClick={() => pickTool('draw')}
           className={`w-full inline-flex flex-col items-center justify-center gap-1 rounded-3xl py-3 text-[10px] uppercase tracking-wider transition-all ${
             activeTool === 'draw'
               ? 'bg-[#FBF8F1] text-[#C5A059] font-bold border border-[#E6C687]'
@@ -103,10 +128,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </button>
 
         <button
-          onClick={() => {
-            setIsShapeMenuOpen(false);
-            onSelectTool('erase');
-          }}
+          onClick={() => pickTool('erase')}
           className={`w-full inline-flex flex-col items-center justify-center gap-1 rounded-3xl py-3 text-[10px] uppercase tracking-wider transition-all ${
             activeTool === 'erase'
               ? 'bg-[#FBF8F1] text-[#C5A059] font-bold border border-[#E6C687]'
@@ -120,9 +142,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="relative">
           <button
-            onClick={() => setIsShapeMenuOpen((v) => !v)}
+            onClick={toggleShapeMenu}
             className={`w-full inline-flex flex-col items-center justify-center gap-1 rounded-3xl py-3 text-[10px] uppercase tracking-wider transition-all ${
-              activeTool === 'shape' || isShapeMenuOpen
+              activeTool === 'shape'
                 ? 'bg-[#FBF8F1] text-[#C5A059] font-bold border border-[#E6C687]'
                 : 'hover:bg-[#FAF8F5] text-[#6E6A63] hover:text-[#121214]'
             }`}
@@ -139,7 +161,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                   key={key}
                   onClick={() => {
                     setIsShapeMenuOpen(false);
-                    onSelectTool('shape');
+                    pickTool('select');
                     onAddShape(key);
                   }}
                   title={label}
@@ -154,7 +176,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
 
         <button
-          onClick={onAddText}
+          onClick={() => openModalAction(onAddText)}
           className="w-full inline-flex flex-col items-center justify-center gap-1 rounded-3xl py-3 text-[10px] uppercase tracking-wider hover:bg-[#FBF8F1] text-[#6E6A63] hover:text-[#C5A059] transition-all"
           title="Add Custom Text"
         >
@@ -163,7 +185,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </button>
 
         <button
-          onClick={onOpenUploadModal}
+          onClick={() => openModalAction(onOpenUploadModal)}
           className="w-full inline-flex flex-col items-center justify-center gap-1 rounded-3xl py-3 text-[10px] uppercase tracking-wider hover:bg-[#FBF8F1] text-[#6E6A63] hover:text-[#C5A059] transition-all"
           title="Convert Image to Engraving Vector"
         >
@@ -173,7 +195,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         {/* Gift Message QR */}
         <button
-          onClick={onOpenGiftQrModal}
+          onClick={() => openModalAction(onOpenGiftQrModal)}
           className="w-full inline-flex flex-col items-center justify-center gap-1 rounded-3xl py-3 text-[10px] uppercase tracking-wider hover:bg-[#FBF8F1] text-[#6E6A63] hover:text-[#C5A059] transition-all"
           title="Upload gift media and add QR code"
         >

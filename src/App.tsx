@@ -52,6 +52,27 @@ export default function App() {
   const [enhancingElement, setEnhancingElement] = useState<CanvasElement | null>(null);
   const [enhancingRegion, setEnhancingRegion] = useState<CanvasRegion | null>(null);
   const [linkedMessageId, setLinkedMessageId] = useState<string | null>(null);
+  const propertiesPanelRef = useRef<HTMLDivElement>(null);
+
+  // Clicking canvas, toolbar, or elsewhere outside the properties panel clears
+  // the current layer/region selection.
+  useEffect(() => {
+    if (currentStep !== 'studio') return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (!target) return;
+      if (propertiesPanelRef.current?.contains(target)) return;
+      if (target.closest('[data-canvas-element]')) return;
+      if (target.closest('[data-no-deselect]')) return;
+
+      setSelectedElementId(null);
+      setSelectedRegion(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [currentStep]);
 
   // Saved Design
   const [savedBundle, setSavedBundle] = useState<SavedDesignBundle | null>(null);
@@ -500,7 +521,7 @@ export default function App() {
               </div>
 
               {/* Right Properties & Layers Panel (4 cols) */}
-              <div className="lg:col-span-4 space-y-4">
+              <div ref={propertiesPanelRef} data-properties-panel className="lg:col-span-4 space-y-4">
                 <PropertiesPanel
                   selectedElement={selectedElement}
                   selectedRegion={selectedRegion}
