@@ -112,22 +112,6 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
                 <div className="absolute top-3 left-3">
                   {getMaterialBadge(item.material)}
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveModalItem(item);
-                  }}
-                  className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md border border-[#E8E2D5] text-[#121214] flex items-center justify-center hover:bg-white hover:border-[#C5A059] shadow-2xs transition-colors"
-                  title="View Engraving Specs"
-                >
-                  <Info className="w-4 h-4 text-[#C5A059]" />
-                </button>
-
-                <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md text-[#121214] border border-[#E8E2D5] px-3.5 py-1 rounded-full text-xs font-mono flex items-center space-x-1.5 shadow-2xs">
-                  <Ruler className="w-3.5 h-3.5 text-[#C5A059]" />
-                  <span className="text-[11px] font-medium">{item.engravingAreaLabel}</span>
-                </div>
               </div>
 
               {/* Content */}
