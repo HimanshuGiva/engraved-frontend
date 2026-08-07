@@ -585,6 +585,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           {/* Real Engraving Area Surface */}
           <div
             ref={containerRef}
+            data-canvas-surface
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -595,43 +596,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             } ${getShapeStyle()}`}
             style={activeTool === 'erase' ? { cursor: ERASER_CURSOR } : undefined}
           >
-
-
-            {/* Empty Canvas Starter Screen */}
-            {elements.length === 0 && currentDrawPoints.length === 0 && activeTool !== 'draw' && activeTool !== 'erase' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10 space-y-5 bg-white/95 backdrop-blur-xs">
-                <div className="text-[#121214] font-serif font-bold text-xl sm:text-2xl">
-                  What would you like to personalize?
-                </div>
-
-                <div className="grid grid-cols-3 gap-2.5 w-full max-w-md text-xs">
-                  <button
-                    onClick={onOpenAiModal}
-                    className="p-3.5 bg-[#121214] text-[#C5A059] border border-[#C5A059]/40 rounded-2xl font-bold uppercase tracking-widest text-[10px] flex flex-col items-center space-y-1.5 shadow-2xs hover:bg-[#C5A059] hover:text-white transition-all hover:scale-102"
-                  >
-                    <Sparkles className="w-5 h-5 text-[#C5A059] group-hover:text-white" />
-                    <span>Create AI</span>
-                  </button>
-
-                  <button
-                    onClick={() => onSelectTool?.('draw')}
-                    className="p-3.5 bg-white text-[#121214] border border-[#E8E2D5] rounded-2xl font-bold text-[10px] uppercase tracking-widest flex flex-col items-center space-y-1.5 shadow-2xs hover:bg-[#FAF8F5] hover:border-[#C5A059] transition-all hover:scale-102"
-                  >
-                    <Pencil className="w-5 h-5 text-[#C5A059]" />
-                    <span>Draw</span>
-                  </button>
-
-                  <button
-                    onClick={onOpenUploadModal}
-                    className="p-3.5 bg-white text-[#121214] border border-[#E8E2D5] rounded-2xl font-bold text-[10px] uppercase tracking-widest flex flex-col items-center space-y-1.5 shadow-2xs hover:bg-[#FAF8F5] hover:border-[#C5A059] transition-all hover:scale-102"
-                  >
-                    <Upload className="w-5 h-5 text-[#C5A059]" />
-                    <span>Upload</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* Rendered Elements Layer — eraser elements never get their own
                box here; they only ever appear as a mask applied to the
                element they target (see relatedErasers below), which is what
@@ -718,6 +682,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               return (
                 <div
                   key={el.id}
+                  data-canvas-element
                   onPointerDown={(e) => startDragging(e, el)}
                   onClick={(e) => {
                     e.stopPropagation();

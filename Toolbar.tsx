@@ -69,7 +69,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         className="w-full inline-flex items-center justify-center gap-2 rounded-3xl bg-[#121214] text-[#C5A059] border border-[#C5A059]/40 font-bold uppercase text-[11px] tracking-widest py-3 shadow-2xs hover:bg-[#C5A059] hover:text-white hover:border-[#C5A059] transition-all"
       >
         <Sparkles className="w-4 h-4 text-[#C5A059]" />
-        <span>Create AI</span>
+        <span>AI Creation</span>
       </button>
 
       <div className="grid gap-2">
