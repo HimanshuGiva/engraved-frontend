@@ -26,6 +26,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
   const [prompt, setPrompt] = useState('');
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [resultSvg, setResultSvg] = useState<string | null>(null);
+  const [resultPreviewUrl, setResultPreviewUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -35,6 +36,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
     setMode(defaultEnhanceMode(element));
     setPrompt('');
     setResultSvg(null);
+    setResultPreviewUrl(null);
     setErrorMessage(null);
 
     let cancelled = false;
@@ -57,11 +59,13 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
     setResultSvg(null);
+    setResultPreviewUrl(null);
 
     try {
       const imageDataUrl = previewDataUrl ?? (await captureElementAsPngDataUrl(element, eraserLayers));
       const result = await fetchAiEnhance(imageDataUrl, mode, prompt);
       setResultSvg(result.svgCode);
+      setResultPreviewUrl(result.previewUrl);
     } catch (e) {
       setErrorMessage(e instanceof Error ? e.message : 'Enhancement failed');
     } finally {
@@ -112,10 +116,11 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
             <div className="h-36 bg-[#FAF8F5] rounded-xl border border-[#E8E2D5] flex items-center justify-center overflow-hidden">
               {isLoading ? (
                 <div className="w-6 h-6 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
-              ) : resultSvg ? (
-                <div
-                  className="w-full h-full p-3 flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-full"
-                  dangerouslySetInnerHTML={{ __html: resultSvg }}
+              ) : resultPreviewUrl ? (
+                <img
+                  src={resultPreviewUrl}
+                  alt="Enhanced preview"
+                  className="max-w-full max-h-full w-full h-full object-contain p-3"
                 />
               ) : (
                 <span className="text-[10px] text-[#8A857C] text-center px-2">Run enhance to preview</span>

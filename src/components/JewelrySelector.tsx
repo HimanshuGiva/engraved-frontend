@@ -5,12 +5,10 @@ import { Sparkles, Ruler, ArrowRight, Info } from 'lucide-react';
 
 interface JewelrySelectorProps {
   onSelectJewelry: (item: JewelryItem) => void;
-  selectedItem: JewelryItem | null;
 }
 
 export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
   onSelectJewelry,
-  selectedItem,
 }) => {
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
   const [activeModalItem, setActiveModalItem] = useState<JewelryItem | null>(null);
@@ -121,17 +119,19 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
 
       {/* Products Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-        {filteredItems.map((item) => {
-          const isSelected = selectedItem?.id === item.id;
-
-          return (
+        {filteredItems.map((item) => (
             <div
               key={item.id}
-              className={`group relative rounded-3xl bg-white border transition-all duration-300 overflow-hidden flex flex-col ${
-                isSelected
-                  ? 'border-[#C5A059] ring-2 ring-[#C5A059]/30 shadow-[0_12px_32px_rgba(197,160,89,0.12)]'
-                  : 'border-[#E8E2D5] hover:border-[#C5A059]/60 hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)]'
-              }`}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelectJewelry(item)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectJewelry(item);
+                }
+              }}
+              className="group relative rounded-3xl bg-white border border-[#E8E2D5] hover:border-[#C5A059]/60 hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition-all duration-300 overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C5A059]/50"
             >
               {/* Image Container */}
               <div className="relative h-72 bg-[#F7F4EE] overflow-hidden">
@@ -146,7 +146,11 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
                 </div>
 
                 <button
-                  onClick={() => setActiveModalItem(item)}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveModalItem(item);
+                  }}
                   className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md border border-[#E8E2D5] text-[#121214] flex items-center justify-center hover:bg-white hover:border-[#C5A059] shadow-2xs transition-colors"
                   title="View Engraving Specs"
                 >
@@ -189,22 +193,16 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
                     <div className="text-[10px] text-[#8A857C] mt-0.5">+ ₹{item.engravingFeeInr} Live Laser Fee</div>
                   </div>
 
-                  <button
-                    onClick={() => onSelectJewelry(item)}
-                    className={`px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest flex items-center space-x-2 transition-all shadow-2xs ${
-                      isSelected
-                        ? 'bg-[#C5A059] text-white'
-                        : 'bg-[#121214] text-white hover:bg-[#C5A059]'
-                    }`}
+                  <span
+                    className="px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest flex items-center space-x-2 transition-all shadow-2xs bg-[#121214] text-white group-hover:bg-[#C5A059]"
                   >
-                    <span>{isSelected ? 'Selected' : 'Personalize'}</span>
+                    <span>Personalize</span>
                     <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  </span>
                 </div>
               </div>
             </div>
-          );
-        })}
+        ))}
       </div>
 
       {/* Engraving Specs Detail Modal */}
