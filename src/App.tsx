@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { JewelryItem, CanvasElement, SavedDesignBundle, AiOption, CanvasRegion } from './types';
 import { JEWELRY_CATALOG } from './data/jewelryCatalog';
 import { Navbar } from './components/Navbar';
@@ -67,6 +67,15 @@ export default function App() {
       setHistoryIndex(historyIndex + 1);
     }
   };
+
+  // Eraser strokes live in history for undo/redo but are never selectable layers.
+  useEffect(() => {
+    if (!selectedElementId) return;
+    const el = currentElements.find((e) => e.id === selectedElementId);
+    if (!el || el.type === 'eraser') {
+      setSelectedElementId(null);
+    }
+  }, [historyIndex, currentElements, selectedElementId]);
 
   // Select Jewelry from Catalog
   const handleSelectJewelry = (jewelry: JewelryItem) => {

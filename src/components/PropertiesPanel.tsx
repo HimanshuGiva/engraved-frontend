@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CanvasElement, CanvasRegion } from '../types';
+import { CanvasElement, CanvasRegion, visibleLayers } from '../types';
 import {
   Sparkles,
   RotateCw,
@@ -49,6 +49,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onExtractRegion,
 }) => {
   const [activeTab, setActiveTab] = useState<'properties' | 'layers'>('properties');
+  const layers = visibleLayers(elements);
 
   useEffect(() => {
     if (selectedElement) {
@@ -66,7 +67,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     <div className="bg-white rounded-3xl p-6 border border-[#E8E2D5] text-[#121214] space-y-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
       
       {/* Panel Tab Header */}
-      <div className="flex items-center justify-between border-b border-[#E8E2D5] pb-3.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#E8E2D5] pb-3.5">
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setActiveTab('properties')}
@@ -87,7 +88,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             }`}
           >
             <Layers className="w-3.5 h-3.5 text-[#C5A059]" />
-            <span>Layers ({elements.length})</span>
+            <span>Layers ({layers.length})</span>
           </button>
         </div>
 
@@ -110,15 +111,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               <span>Enhance</span>
             </button>
           )}
-          {selectedRegion && !selectedElement && activeTab === 'properties' && (
-            <button
-              onClick={() => onEnhanceRegion(selectedRegion)}
-              className="px-3 py-1 rounded-full bg-[#121214] text-[#C5A059] border border-[#C5A059]/40 text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1 hover:bg-[#C5A059] hover:text-white transition-colors"
-            >
-              <Wand2 className="w-3 h-3" />
-              <span>Enhance</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -126,14 +118,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       {activeTab === 'layers' && (
         <div className="space-y-3">
           <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#8A857C]">All Canvas Layers</h4>
-          {elements.length === 0 ? (
+          {layers.length === 0 ? (
             <div className="py-8 text-center text-xs text-[#6E6A63] space-y-2">
               <p>Your canvas is currently empty.</p>
               <p className="text-[#121214]">Tap <strong className="text-[#C5A059]">"Create with AI"</strong> or start drawing to add an element.</p>
             </div>
           ) : (
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-              {elements.map((el, i) => {
+              {layers.map((el, i) => {
                 const isSelected = selectedElement?.id === el.id;
                 return (
                   <div
@@ -205,19 +197,19 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
       {/* Tab Content: Canvas region selection */}
       {activeTab === 'properties' && selectedRegion && !selectedElement && (
-        <div className="space-y-5 text-xs">
-          <div className="pb-3 border-b border-[#E8E2D5]">
+        <div className="space-y-4 text-xs">
+          <div>
             <span className="text-[10px] font-mono text-[#C5A059] uppercase tracking-widest font-bold flex items-center gap-1.5">
               <Scan className="w-3.5 h-3.5" />
               Canvas Region
             </span>
-            <h3 className="font-serif font-bold text-lg text-[#121214] mt-0.5">Selected portion</h3>
+            <h3 className="font-serif font-bold text-lg text-[#121214] mt-1">Selected portion</h3>
             <p className="text-[#6E6A63] text-[11px] mt-1 leading-relaxed">
               {Math.round(selectedRegion.width)}% × {Math.round(selectedRegion.height)}% of the engraving area
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-2">
+          <div className="grid grid-cols-1 gap-2 pt-1">
             <button
               onClick={() => onEnhanceRegion(selectedRegion)}
               className="w-full py-3 rounded-full bg-[#121214] text-white hover:bg-[#C5A059] font-bold uppercase tracking-widest text-[10px] flex items-center justify-center space-x-2 transition-colors"
@@ -256,22 +248,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 ? '✍️ Personal Handwriting'
                 : selectedElement.type === 'text'
                 ? '🔤 Text Engraving'
-                : selectedElement.type === 'eraser'
-                ? '🧹 Eraser Layer (Non-Destructive)'
                 : selectedElement.type === 'shape'
                 ? '◆ Shape'
                 : 'Layer Selected'}
             </span>
             <h3 className="font-serif font-bold text-lg text-[#121214] truncate mt-0.5">{selectedElement.name}</h3>
           </div>
-
-          {/* Eraser Layer Explainer */}
-          {selectedElement.type === 'eraser' && (
-            <div className="bg-[#FBF8F1] border border-[#E6C687]/50 rounded-2xl p-3.5 text-[11px] text-[#6E6A63] leading-relaxed">
-              This erase is its own independent layer — it never modifies the original artwork underneath.
-              Delete it any time to instantly restore the erased area, or adjust its brush size below.
-            </div>
-          )}
 
           {/* Text Editor Input for Text Type */}
           {selectedElement.type === 'text' && (
@@ -308,10 +290,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
           )}
 
-          {/* Size Slider — not meaningful for eraser layers, which render
-             inside their target's own box rather than an independent one */}
-          {selectedElement.type !== 'eraser' && (
-            <div className="space-y-1.5">
+          {/* Size Slider */}
+          <div className="space-y-1.5">
               <div className="flex justify-between text-[#6E6A63] font-medium">
                 <span className="flex items-center space-x-1.5">
                   <Maximize2 className="w-3.5 h-3.5 text-[#C5A059]" />
@@ -328,14 +308,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   const newW = parseFloat(e.target.value);
                   onUpdateElement({ ...selectedElement, width: newW, height: newW });
                 }}
-                className="w-full accent-[#C5A059] cursor-pointer"
-              />
-            </div>
-          )}
+              className="w-full accent-[#C5A059] cursor-pointer"
+            />
+          </div>
 
-          {/* Rotation Slider — same reasoning as Scale Size above */}
-          {selectedElement.type !== 'eraser' && (
-            <div className="space-y-1.5">
+          {/* Rotation Slider */}
+          <div className="space-y-1.5">
               <div className="flex justify-between text-[#6E6A63] font-medium">
                 <span className="flex items-center space-x-1.5">
                   <RotateCw className="w-3.5 h-3.5 text-[#C5A059]" />
@@ -349,22 +327,20 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 max="180"
                 value={selectedElement.rotation}
                 onChange={(e) => onUpdateElement({ ...selectedElement, rotation: parseFloat(e.target.value) })}
-                className="w-full accent-[#C5A059] cursor-pointer"
-              />
-            </div>
-          )}
+              className="w-full accent-[#C5A059] cursor-pointer"
+            />
+          </div>
 
-          {/* Stroke Width Slider — line thickness for hand-drawn/shape strokes, or brush size for an eraser layer */}
+          {/* Stroke Width Slider — line thickness for hand-drawn/shape strokes */}
           {(selectedElement.type === 'freehand_draw' ||
             selectedElement.type === 'handwriting' ||
-            selectedElement.type === 'shape' ||
-            selectedElement.type === 'eraser') && (
+            selectedElement.type === 'shape') && (
             <div className="space-y-2">
               <div className="flex justify-between text-[#6E6A63] font-medium">
                 <span className="flex items-center space-x-1.5">
                   <Sliders className="w-3.5 h-3.5 text-[#C5A059]" />
                   <span className="uppercase text-[10px] tracking-wider font-bold">
-                    {selectedElement.type === 'eraser' ? 'Eraser Brush Size' : 'Line Engraving Thickness'}
+                    Line Engraving Thickness
                   </span>
                 </span>
                 <span className="font-mono text-[#C5A059] font-bold">{selectedElement.strokeWidth ?? 1}px</span>
@@ -372,14 +348,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               <input
                 type="range"
                 min="0.5"
-                max={selectedElement.type === 'eraser' ? 20 : 6}
+                max={6}
                 step="0.5"
                 value={selectedElement.strokeWidth ?? 1}
                 onChange={(e) => onUpdateElement({ ...selectedElement, strokeWidth: parseFloat(e.target.value) })}
                 className="w-full accent-[#C5A059] cursor-pointer"
               />
               <div className="flex items-center space-x-1.5 pt-1">
-                {(selectedElement.type === 'eraser' ? [4, 8, 12, 16, 20] : [0.5, 1, 2, 3, 4, 6]).map((w) => (
+                {[0.5, 1, 2, 3, 4, 6].map((w) => (
                   <button
                     key={w}
                     type="button"
@@ -398,51 +374,31 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           )}
 
           {/* Center Alignment Button */}
-          {selectedElement.type !== 'eraser' && (
-            <button
+          <button
               onClick={() => onUpdateElement({ ...selectedElement, x: 50, y: 50 })}
               className="w-full py-3 bg-[#FAF8F5] hover:bg-[#FBF8F1] text-[#121214] rounded-full border border-[#E8E2D5] hover:border-[#C5A059] flex items-center justify-center space-x-2 text-xs font-bold uppercase tracking-wider transition-colors shadow-2xs"
             >
               <AlignCenter className="w-4 h-4 text-[#C5A059]" />
-              <span>Center on Canvas</span>
-            </button>
-          )}
+            <span>Center on Canvas</span>
+          </button>
 
           {/* Layer Actions */}
-          <div className="pt-3 border-t border-[#E8E2D5] grid grid-cols-4 gap-2">
-            <button
-              onClick={() => onReorderElement(selectedElement.id, 'front')}
-              className="p-2.5 bg-[#FAF8F5] hover:bg-[#FBF8F1] rounded-2xl border border-[#E8E2D5] hover:border-[#C5A059] flex flex-col items-center text-[10px] text-[#121214] font-semibold tracking-wider uppercase transition-colors"
-              title="Bring Forward"
-            >
-              <ArrowUp className="w-4 h-4 text-[#C5A059] mb-1" />
-              <span>Front</span>
-            </button>
-
-            <button
-              onClick={() => onReorderElement(selectedElement.id, 'back')}
-              className="p-2.5 bg-[#FAF8F5] hover:bg-[#FBF8F1] rounded-2xl border border-[#E8E2D5] hover:border-[#C5A059] flex flex-col items-center text-[10px] text-[#121214] font-semibold tracking-wider uppercase transition-colors"
-              title="Send Backward"
-            >
-              <ArrowDown className="w-4 h-4 text-[#C5A059] mb-1" />
-              <span>Back</span>
-            </button>
-
+          <div className="pt-3 border-t border-[#E8E2D5] grid grid-cols-2 gap-2">
             <button
               onClick={() => onDuplicateElement(selectedElement.id)}
-              className="p-2.5 bg-[#FAF8F5] hover:bg-[#FBF8F1] rounded-2xl border border-[#E8E2D5] hover:border-[#C5A059] flex flex-col items-center text-[10px] text-[#121214] font-semibold tracking-wider uppercase transition-colors"
+              className="py-3 bg-[#FAF8F5] hover:bg-[#FBF8F1] rounded-2xl border border-[#E8E2D5] hover:border-[#C5A059] flex items-center justify-center gap-2 text-[10px] text-[#121214] font-bold tracking-wider uppercase transition-colors"
               title="Duplicate Element"
             >
-              <Copy className="w-4 h-4 text-[#C5A059] mb-1" />
+              <Copy className="w-4 h-4 text-[#C5A059]" />
               <span>Duplicate</span>
             </button>
 
             <button
               onClick={() => onDeleteElement(selectedElement.id)}
-              className="p-2.5 bg-rose-50 hover:bg-rose-100 rounded-2xl border border-rose-200 flex flex-col items-center text-[10px] text-[#9F1239] font-semibold tracking-wider uppercase transition-colors"
+              className="py-3 bg-rose-50 hover:bg-rose-100 rounded-2xl border border-rose-200 flex items-center justify-center gap-2 text-[10px] text-[#9F1239] font-bold tracking-wider uppercase transition-colors"
               title="Delete Element"
             >
-              <Trash2 className="w-4 h-4 mb-1" />
+              <Trash2 className="w-4 h-4" />
               <span>Delete</span>
             </button>
           </div>
