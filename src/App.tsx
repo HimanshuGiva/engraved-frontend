@@ -66,21 +66,17 @@ export default function App() {
   };
 
   // Add Element to Canvas
-  const handleAddElement = (newEl: CanvasElement, select = true) => {
+  const handleAddElement = (newEl: CanvasElement) => {
     const updated = [...currentElements, newEl];
     updateElementsWithHistory(updated);
-    if (select) {
-      setSelectedElementId(newEl.id);
-    }
+    setSelectedElementId(newEl.id);
   };
 
   // Update existing element
-  const handleUpdateElement = (updatedEl: CanvasElement, select = true) => {
+  const handleUpdateElement = (updatedEl: CanvasElement) => {
     const updated = currentElements.map((el) => (el.id === updatedEl.id ? updatedEl : el));
     updateElementsWithHistory(updated);
-    if (select) {
-      setSelectedElementId(updatedEl.id);
-    }
+    setSelectedElementId(updatedEl.id);
   };
 
   // Delete element
