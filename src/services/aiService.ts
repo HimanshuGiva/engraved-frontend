@@ -46,6 +46,39 @@ export async function fetchAiEngravingOptions(
   };
 }
 
+export type EnhanceMode = 'ai_generated' | 'manual';
+
+interface BackendEnhanceResponse {
+  b64: string;
+  content_type: string;
+  provider: string;
+}
+
+/** Enhance a rasterized region/element via POST /v1/ai/enhance. */
+export async function fetchAiEnhance(
+  imageDataUrl: string,
+  mode: EnhanceMode,
+  prompt: string
+): Promise<{ svgCode: string; provider: string }> {
+  const data = await apiFetch<BackendEnhanceResponse>('/v1/ai/enhance', {
+    method: 'POST',
+    body: JSON.stringify({
+      image_b64: imageDataUrl,
+      mode,
+      prompt: prompt.trim(),
+    }),
+  });
+
+  if (!data.b64) {
+    throw new Error('AI returned no enhanced image');
+  }
+
+  return {
+    svgCode: pngB64ToSvgWrapper(data.b64, data.content_type || 'image/png'),
+    provider: data.provider,
+  };
+}
+
 /** Refine — not wired to backend yet (uses legacy mock). */
 export async function fetchAiRefineOptions(
   currentSvg: string,

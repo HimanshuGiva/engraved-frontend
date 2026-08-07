@@ -10,8 +10,10 @@ import {
   Copy,
   Trash2,
   AlignCenter,
-  Sliders
+  Sliders,
+  Wand2,
 } from 'lucide-react';
+import { isEnhanceableElement } from '../utils/canvasCapture';
 
 interface PropertiesPanelProps {
   selectedElement: CanvasElement | null;
@@ -22,6 +24,7 @@ interface PropertiesPanelProps {
   onDuplicateElement: (id: string) => void;
   onReorderElement: (id: string, direction: 'front' | 'back') => void;
   onOpenAiRefine: (element: CanvasElement) => void;
+  onOpenAiEnhance: (element: CanvasElement) => void;
 }
 
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
@@ -33,6 +36,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onDuplicateElement,
   onReorderElement,
   onOpenAiRefine,
+  onOpenAiEnhance,
 }) => {
   const [activeTab, setActiveTab] = useState<'properties' | 'layers'>('properties');
 
@@ -71,15 +75,26 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           </button>
         </div>
 
-        {selectedElement?.isAiGenerated && activeTab === 'properties' && (
-          <button
-            onClick={() => onOpenAiRefine(selectedElement)}
-            className="px-3 py-1 rounded-full bg-[#FBF8F1] text-[#C5A059] border border-[#E6C687]/50 text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1 hover:bg-[#F7F4EE] transition-colors"
-          >
-            <Sparkles className="w-3 h-3 text-[#C5A059]" />
-            <span>Refine AI</span>
-          </button>
-        )}
+        <div className="flex items-center space-x-1.5">
+          {selectedElement?.isAiGenerated && activeTab === 'properties' && (
+            <button
+              onClick={() => onOpenAiRefine(selectedElement)}
+              className="px-3 py-1 rounded-full bg-[#FBF8F1] text-[#C5A059] border border-[#E6C687]/50 text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1 hover:bg-[#F7F4EE] transition-colors"
+            >
+              <Sparkles className="w-3 h-3 text-[#C5A059]" />
+              <span>Refine AI</span>
+            </button>
+          )}
+          {selectedElement && isEnhanceableElement(selectedElement) && activeTab === 'properties' && (
+            <button
+              onClick={() => onOpenAiEnhance(selectedElement)}
+              className="px-3 py-1 rounded-full bg-[#121214] text-[#C5A059] border border-[#C5A059]/40 text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1 hover:bg-[#C5A059] hover:text-white transition-colors"
+            >
+              <Wand2 className="w-3 h-3" />
+              <span>Enhance</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tab Content: Canvas Layers List */}
