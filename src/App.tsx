@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { JewelryItem, CanvasElement, SavedDesignBundle, AiOption, ValidationIssue } from './types';
+import { useState } from 'react';
+import { JewelryItem, CanvasElement, SavedDesignBundle, AiOption } from './types';
 import { JEWELRY_CATALOG } from './data/jewelryCatalog';
 import { Navbar } from './components/Navbar';
 import { JewelrySelector } from './components/JewelrySelector';
@@ -13,8 +13,6 @@ import { TextModal } from './components/TextModal';
 import { JewelryPreview } from './components/JewelryPreview';
 import { ConfirmationScreen } from './components/ConfirmationScreen';
 import { StoreAssociateDrawer } from './components/StoreAssociateDrawer';
-import { ValidationBanner } from './components/ValidationBanner';
-import { validateEngravingDesign, autoFixEngravingDesign } from './utils/validationEngine';
 import { generateCompositeSvg, SHAPE_PRESETS, SHAPE_LABELS } from './utils/svgUtils';
 import { ArrowRight } from 'lucide-react';
 
@@ -41,20 +39,8 @@ export default function App() {
   const [refiningElement, setRefiningElement] = useState<CanvasElement | null>(null);
   const [enhancingElement, setEnhancingElement] = useState<CanvasElement | null>(null);
 
-  // Validation
-  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
-  const [fixedMessage, setFixedMessage] = useState<string | null>(null);
-
   // Saved Design
   const [savedBundle, setSavedBundle] = useState<SavedDesignBundle | null>(null);
-
-  // Run validation whenever elements or jewelry changes
-  useEffect(() => {
-    if (selectedJewelry) {
-      const issues = validateEngravingDesign(currentElements, selectedJewelry);
-      setValidationIssues(issues);
-    }
-  }, [currentElements, selectedJewelry]);
 
   // History updater helper
   const updateElementsWithHistory = (newElements: CanvasElement[]) => {
@@ -67,14 +53,12 @@ export default function App() {
   const handleUndo = () => {
     if (historyIndex > 0) {
       setHistoryIndex(historyIndex - 1);
-      setFixedMessage(null);
     }
   };
 
   const handleRedo = () => {
     if (historyIndex < elementsHistory.length - 1) {
       setHistoryIndex(historyIndex + 1);
-      setFixedMessage(null);
     }
   };
 
@@ -85,18 +69,21 @@ export default function App() {
   };
 
   // Add Element to Canvas
-  const handleAddElement = (newEl: CanvasElement) => {
+  const handleAddElement = (newEl: CanvasElement, select = true) => {
     const updated = [...currentElements, newEl];
     updateElementsWithHistory(updated);
-    setSelectedElementId(newEl.id);
-    setFixedMessage(null);
+    if (select) {
+      setSelectedElementId(newEl.id);
+    }
   };
 
   // Update existing element
-  const handleUpdateElement = (updatedEl: CanvasElement) => {
+  const handleUpdateElement = (updatedEl: CanvasElement, select = true) => {
     const updated = currentElements.map((el) => (el.id === updatedEl.id ? updatedEl : el));
     updateElementsWithHistory(updated);
-    setSelectedElementId(updatedEl.id);
+    if (select) {
+      setSelectedElementId(updatedEl.id);
+    }
   };
 
   // Delete element
@@ -148,7 +135,6 @@ export default function App() {
     if (window.confirm('Are you sure you want to clear your entire canvas?')) {
       updateElementsWithHistory([]);
       setSelectedElementId(null);
-      setFixedMessage(null);
     }
   };
 
@@ -248,13 +234,6 @@ export default function App() {
   };
 
   // Automatic Fix
-  const handleAutoFix = () => {
-    if (!selectedJewelry) return;
-    const { fixedElements, summaryMessage } = autoFixEngravingDesign(currentElements, selectedJewelry);
-    updateElementsWithHistory(fixedElements);
-    setFixedMessage(summaryMessage);
-  };
-
   // Confirm Final Design & Save to Server
   const handleConfirmDesign = async () => {
     if (!selectedJewelry) return;
@@ -265,7 +244,7 @@ export default function App() {
       jewelry: selectedJewelry,
       elements: currentElements,
       compositeSvg: composite,
-      validationPassed: validationIssues.length === 0,
+      validationPassed: true,
       totalPriceInr: selectedJewelry.priceInr + selectedJewelry.engravingFeeInr,
     };
 
@@ -283,7 +262,7 @@ export default function App() {
         jewelry: selectedJewelry,
         elements: currentElements,
         compositeSvg: composite,
-        validationPassed: validationIssues.length === 0,
+        validationPassed: true,
         totalPriceInr: selectedJewelry.priceInr + selectedJewelry.engravingFeeInr,
       };
 
@@ -346,14 +325,6 @@ export default function App() {
               onClear={handleClearCanvas}
               eraserSize={eraserSize}
               onEraserSizeChange={setEraserSize}
-            />
-
-            {/* Live Validation & Auto-Fix Alerts */}
-            <ValidationBanner
-              issues={validationIssues}
-              onAutoFix={handleAutoFix}
-              fixedMessage={fixedMessage}
-              onUndoFix={handleUndo}
             />
 
             {/* Studio Main Workspace Layout (Center Canvas + Right Panel) */}

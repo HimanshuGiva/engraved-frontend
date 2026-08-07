@@ -33,13 +33,36 @@ export const SHAPE_LABELS: Record<string, string> = {
  */
 export function buildEraserMaskDataUri(erasers: CanvasElement[]): string | null {
   if (!erasers.length) return null;
+  // vector-effect="non-scaling-stroke" is the precision fix: this mask gets
+  // stretched non-uniformly by CSS (mask-size 100% 100%) to match whatever
+  // width x height box the target element actually renders at, which for
+  // any non-square element (nearly every hand-drawn stroke or AI vector)
+  // would otherwise distort a uniform stroke-width into a fat, lopsided
+  // ellipse — erasing a visibly larger area than the thin, constant-width
+  // pink line the user actually saw while dragging (that preview path uses
+  // the same non-scaling-stroke trick, which is why it looked precise while
+  // the committed erase didn't). This keeps the two in exact sync.
   const strokes = erasers
     .map(
       (e) =>
-        `<path d="${e.content}" fill="none" stroke="black" stroke-width="${e.strokeWidth ?? 8}" stroke-linecap="round" stroke-linejoin="round"/>`
+        `<path d="${e.content}" fill="none" stroke="black" stroke-width="${e.strokeWidth ?? 8}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`
     )
     .join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="0" y="0" width="100" height="100" fill="white"/>${strokes}</svg>`;
+  // The erased holes need to be REAL transparent pixels (alpha 0) in the
+  // rendered raster, not just "visually black" — when this data URI is fed
+  // straight to CSS `mask-image` (rather than referenced as an SVG <mask>
+  // element via `mask="url(#id)"`), browsers default `mask-mode` to `alpha`
+  // for plain images, per the CSS Masking spec's `match-source` behavior
+  // ("if it [the mask reference] is an image, this value is treated as
+  // alpha"). A flat white rect + opaque black strokes is 100% opaque
+  // everywhere, so under alpha-mode masking nothing gets erased at all: the
+  // eraser stroke previews correctly but the release never actually cuts a
+  // hole. Wrapping the strokes in an inner SVG <mask> (which is ALWAYS
+  // luminance-evaluated per SVG semantics, independent of the outer CSS
+  // mask-mode) and painting a masked rect bakes real alpha=0 into the
+  // stroke area before it's ever exposed to CSS masking, so it erases
+  // correctly under both alpha and luminance CSS mask-mode.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><mask id="erase-hole" maskContentUnits="userSpaceOnUse"><rect x="0" y="0" width="100" height="100" fill="white"/>${strokes}</mask></defs><rect x="0" y="0" width="100" height="100" fill="white" mask="url(#erase-hole)"/></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
@@ -93,6 +116,67 @@ export function pointsToSvgPath(points: { x: number; y: number }[]): string {
   }
 
   return d;
+}
+
+/**
+ * Merges every stroke drawn so far in one continuous drawing session (from
+ * pencil-down to an explicit tool switch/Done — NOT per pen-lift) into a
+ * single element's worth of path data + bounding box.
+ *
+ * Why this exists: a customer handwriting a word or sketching an icon lifts
+ * the pencil constantly (between letters, to dot an "i", to start a second
+ * petal on a flower). If every lift produced its own layer, the result
+ * would be a pile of independently-draggable fragments instead of one
+ * movable/rotatable drawing — which is exactly the bad experience being
+ * fixed here. So the caller accumulates every finished stroke of the
+ * current session (each an array of {x,y} points in absolute canvas-%
+ * space) and re-calls this on every new stroke; we recompute the union
+ * bounding box across ALL of them and re-normalize every stroke into that
+ * box's local 0-100 space, then join each stroke as its own subpath inside
+ * one SVG `d` string (a single <path> renders disconnected "M" subpaths
+ * fine, so strokes stay visually distinct while acting as one element).
+ */
+export function buildFreehandSessionData(
+  strokes: { x: number; y: number }[][]
+): { content: string; x: number; y: number; width: number; height: number } | null {
+  const allPoints = strokes.flat();
+  if (allPoints.length < 2) return null;
+
+  const xs = allPoints.map((p) => p.x);
+  const ys = allPoints.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  // Same 2% padding convention as the single-stroke path, so line caps/edges
+  // of every stroke in the session stay clear of the bounding box edge.
+  const pad = 2;
+  const minXPad = Math.max(0, minX - pad);
+  const maxXPad = Math.min(100, maxX + pad);
+  const minYPad = Math.max(0, minY - pad);
+  const maxYPad = Math.min(100, maxY + pad);
+
+  const bw = Math.max(6, maxXPad - minXPad);
+  const bh = Math.max(6, maxYPad - minYPad);
+  const cx = minXPad + bw / 2;
+  const cy = minYPad + bh / 2;
+
+  const normalizeStroke = (stroke: { x: number; y: number }[]) =>
+    stroke.map((p) => ({
+      x: ((p.x - minXPad) / bw) * 100,
+      y: ((p.y - minYPad) / bh) * 100,
+    }));
+
+  const content = strokes
+    .filter((stroke) => stroke.length > 1)
+    .map((stroke) => pointsToSvgPath(normalizeStroke(stroke)))
+    .filter(Boolean)
+    .join(' ');
+
+  if (!content) return null;
+
+  return { content, x: cx, y: cy, width: bw, height: bh };
 }
 
 /**

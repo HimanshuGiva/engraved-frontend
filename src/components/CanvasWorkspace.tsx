@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CanvasElement, JewelryItem } from '../types';
 import { ToolMode } from './Toolbar';
-import { pointsToSvgPath, buildEraserMaskDataUri } from '../utils/svgUtils';
+import { pointsToSvgPath, buildEraserMaskDataUri, buildFreehandSessionData } from '../utils/svgUtils';
 import { Sparkles, Pencil, Upload } from 'lucide-react';
 
 interface CanvasWorkspaceProps {
@@ -10,8 +10,8 @@ interface CanvasWorkspaceProps {
   selectedElementId: string | null;
   activeTool: ToolMode;
   onSelectElement: (id: string | null) => void;
-  onUpdateElement: (updated: CanvasElement) => void;
-  onAddElement: (element: CanvasElement) => void;
+  onUpdateElement: (updated: CanvasElement, select?: boolean) => void;
+  onAddElement: (element: CanvasElement, select?: boolean) => void;
   onSelectTool?: (tool: ToolMode) => void;
   onOpenAiModal: () => void;
   onOpenUploadModal: () => void;
@@ -62,6 +62,69 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
   const [currentDrawPoints, setCurrentDrawPoints] = useState<{ x: number; y: number }[]>([]);
+  const drawingSelectionTimeoutRef = useRef<number | null>(null);
+  const pendingSelectionIdRef = useRef<string | null>(null);
+
+  // Freehand drawing SESSION tracking — a session is every stroke drawn
+  // between picking up the pencil and an explicit "I'm done" signal
+  // (switching tools). Lifting the pencil mid-word/mid-sketch and drawing
+  // again continues the SAME layer instead of fragmenting it into a new
+  // one, which is what made multi-stroke handwriting/sketches impossible
+  // to move or resize as a single object.
+  const [drawSessionElementId, setDrawSessionElementId] = useState<string | null>(null);
+  const [drawSessionStrokes, setDrawSessionStrokes] = useState<{ x: number; y: number }[][]>([]);
+  // Tracks the content we last wrote to the session element, so we can tell
+  // if something else (undo/redo/clear) touched it out from under us — in
+  // that case we end the session rather than silently overwrite/redo it.
+  const lastCommittedSessionContentRef = useRef<string | null>(null);
+
+  const endDrawSession = () => {
+    setDrawSessionElementId(null);
+    setDrawSessionStrokes([]);
+    lastCommittedSessionContentRef.current = null;
+  };
+
+  // Leaving the Draw tool is the explicit "I'm done with this drawing"
+  // signal — the next time Draw is selected, a fresh stroke starts a brand
+  // new layer rather than resuming the old one.
+  const clearPendingDrawSelection = () => {
+    if (drawingSelectionTimeoutRef.current !== null) {
+      window.clearTimeout(drawingSelectionTimeoutRef.current);
+      drawingSelectionTimeoutRef.current = null;
+    }
+    pendingSelectionIdRef.current = null;
+  };
+
+  const scheduleSelectDrawElement = (id: string) => {
+    clearPendingDrawSelection();
+    pendingSelectionIdRef.current = id;
+    drawingSelectionTimeoutRef.current = window.setTimeout(() => {
+      onSelectElement(id);
+      drawingSelectionTimeoutRef.current = null;
+      pendingSelectionIdRef.current = null;
+    }, 3000);
+  };
+
+  useEffect(() => {
+    if (activeTool !== 'draw') {
+      clearPendingDrawSelection();
+      endDrawSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool]);
+
+  // If the session's element was changed out from under us (an Undo/Redo
+  // reverted its content, or Clear Canvas removed it), stop trying to
+  // append to it — starting a fresh layer on the next stroke is the least
+  // surprising outcome and avoids corrupting the undo stack.
+  useEffect(() => {
+    if (!drawSessionElementId) return;
+    const el = elements.find((e) => e.id === drawSessionElementId);
+    if (!el || el.content !== lastCommittedSessionContentRef.current) {
+      endDrawSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elements, drawSessionElementId]);
 
   // Eraser tool state — the erase stroke is recorded directly in the
   // target element's own local coordinate space (see toLocalPercent), so no
@@ -127,6 +190,9 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
       const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
+      if (drawingSelectionTimeoutRef.current !== null) {
+        clearPendingDrawSelection();
+      }
       setIsDrawingFreehand(true);
       setCurrentDrawPoints([{ x: xPct, y: yPct }]);
     } else if (activeTool === 'erase') {
@@ -206,48 +272,58 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     if (activeTool === 'draw' && isDrawingFreehand) {
       setIsDrawingFreehand(false);
       if (currentDrawPoints.length > 1) {
-        // Calculate exact bounding box of drawn points
-        const xs = currentDrawPoints.map((p) => p.x);
-        const ys = currentDrawPoints.map((p) => p.y);
-        const minX = Math.min(...xs);
-        const maxX = Math.max(...xs);
-        const minY = Math.min(...ys);
-        const maxY = Math.max(...ys);
+        // Add this stroke to the current session (all strokes drawn since
+        // the pencil was first picked up, across however many lifts) and
+        // recompute one merged bounding box + path covering all of them.
+        const sessionStrokes = [...drawSessionStrokes, currentDrawPoints];
+        const merged = buildFreehandSessionData(sessionStrokes);
 
-        // Add 2% padding so line caps/edges aren't cut off
-        const pad = 2;
-        const minXPad = Math.max(0, minX - pad);
-        const maxXPad = Math.min(100, maxX + pad);
-        const minYPad = Math.max(0, minY - pad);
-        const maxYPad = Math.min(100, maxY + pad);
-
-        const bw = Math.max(6, maxXPad - minXPad);
-        const bh = Math.max(6, maxYPad - minYPad);
-        const cx = minXPad + bw / 2;
-        const cy = minYPad + bh / 2;
-
-        // Normalize points into 0-100 viewBox space inside the bounding box
-        const normalizedPoints = currentDrawPoints.map((p) => ({
-          x: ((p.x - minXPad) / bw) * 100,
-          y: ((p.y - minYPad) / bh) * 100,
-        }));
-
-        const pathD = pointsToSvgPath(normalizedPoints);
-        const newDrawElement: CanvasElement = {
-          id: `draw-${Date.now()}`,
-          type: 'freehand_draw',
-          name: 'Hand Drawn Sketch',
-          x: cx,
-          y: cy,
-          width: bw,
-          height: bh,
-          rotation: 0,
-          zIndex: elements.length + 1,
-          content: pathD,
-          strokeWidth: 1,
-        };
-        onAddElement(newDrawElement);
-        onSelectElement(newDrawElement.id);
+        if (merged) {
+          if (drawSessionElementId) {
+            // Continuing the session: update the SAME element in place so
+            // the whole drawing stays one movable/rotatable/resizable
+            // layer, instead of adding a new fragment for this stroke.
+            const existing = elements.find((el) => el.id === drawSessionElementId);
+            if (existing) {
+              const updatedElement: CanvasElement = {
+                ...existing,
+                content: merged.content,
+                x: merged.x,
+                y: merged.y,
+                width: merged.width,
+                height: merged.height,
+              };
+              lastCommittedSessionContentRef.current = merged.content;
+              onUpdateElement(updatedElement, false);
+              scheduleSelectDrawElement(updatedElement.id);
+              setDrawSessionStrokes(sessionStrokes);
+            } else {
+              // Session element vanished (e.g. deleted from the Layers
+              // panel) — start a brand new layer for this stroke instead.
+              endDrawSession();
+            }
+          } else {
+            // First stroke of a new session — create its layer.
+            const newDrawElement: CanvasElement = {
+              id: `draw-${Date.now()}`,
+              type: 'freehand_draw',
+              name: 'Hand Drawn Sketch',
+              x: merged.x,
+              y: merged.y,
+              width: merged.width,
+              height: merged.height,
+              rotation: 0,
+              zIndex: elements.length + 1,
+              content: merged.content,
+              strokeWidth: 1,
+            };
+            lastCommittedSessionContentRef.current = merged.content;
+            setDrawSessionElementId(newDrawElement.id);
+            setDrawSessionStrokes(sessionStrokes);
+            onAddElement(newDrawElement, false);
+            scheduleSelectDrawElement(newDrawElement.id);
+          }
+        }
       }
       setCurrentDrawPoints([]);
     } else if (activeTool === 'erase' && eraseTargetId) {
@@ -405,6 +481,12 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   } as React.CSSProperties)
                 : {};
 
+              const wrapperRingClass = isSelected
+                ? 'ring-2 ring-[#C5A059] rounded'
+                : activeTool !== 'draw'
+                ? 'hover:ring-1 hover:ring-[#C5A059]/50'
+                : '';
+
               return (
                 <div
                   key={el.id}
@@ -422,9 +504,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                     transform: `translate(-50%, -50%) rotate(${el.rotation}deg)`,
                     zIndex: el.zIndex,
                   }}
-                  className={`group absolute cursor-grab active:cursor-grabbing transition-shadow ${
-                    isSelected ? 'ring-2 ring-[#C5A059] rounded' : 'hover:ring-1 hover:ring-[#C5A059]/50'
-                  }`}
+                  className={`group absolute cursor-grab active:cursor-grabbing transition-shadow ${wrapperRingClass}`}
                 >
                   {/* Element Content Render — masked by any eraser layers targeting it */}
                   <div className="w-full h-full" style={contentStyle}>
