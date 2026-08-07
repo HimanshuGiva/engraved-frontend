@@ -59,6 +59,15 @@ export interface CanvasElement {
   targetElementId?: string;
 }
 
+/** Layers shown in the UI — eraser strokes are history-only, not listed. */
+export function isVisibleLayer(el: CanvasElement): boolean {
+  return el.type !== 'eraser';
+}
+
+export function visibleLayers(elements: CanvasElement[]): CanvasElement[] {
+  return elements.filter(isVisibleLayer);
+}
+
 export interface ValidationIssue {
   id: string;
   elementId?: string;
