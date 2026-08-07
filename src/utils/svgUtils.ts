@@ -119,6 +119,67 @@ export function pointsToSvgPath(points: { x: number; y: number }[]): string {
 }
 
 /**
+ * Merges every stroke drawn so far in one continuous drawing session (from
+ * pencil-down to an explicit tool switch/Done — NOT per pen-lift) into a
+ * single element's worth of path data + bounding box.
+ *
+ * Why this exists: a customer handwriting a word or sketching an icon lifts
+ * the pencil constantly (between letters, to dot an "i", to start a second
+ * petal on a flower). If every lift produced its own layer, the result
+ * would be a pile of independently-draggable fragments instead of one
+ * movable/rotatable drawing — which is exactly the bad experience being
+ * fixed here. So the caller accumulates every finished stroke of the
+ * current session (each an array of {x,y} points in absolute canvas-%
+ * space) and re-calls this on every new stroke; we recompute the union
+ * bounding box across ALL of them and re-normalize every stroke into that
+ * box's local 0-100 space, then join each stroke as its own subpath inside
+ * one SVG `d` string (a single <path> renders disconnected "M" subpaths
+ * fine, so strokes stay visually distinct while acting as one element).
+ */
+export function buildFreehandSessionData(
+  strokes: { x: number; y: number }[][]
+): { content: string; x: number; y: number; width: number; height: number } | null {
+  const allPoints = strokes.flat();
+  if (allPoints.length < 2) return null;
+
+  const xs = allPoints.map((p) => p.x);
+  const ys = allPoints.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  // Same 2% padding convention as the single-stroke path, so line caps/edges
+  // of every stroke in the session stay clear of the bounding box edge.
+  const pad = 2;
+  const minXPad = Math.max(0, minX - pad);
+  const maxXPad = Math.min(100, maxX + pad);
+  const minYPad = Math.max(0, minY - pad);
+  const maxYPad = Math.min(100, maxY + pad);
+
+  const bw = Math.max(6, maxXPad - minXPad);
+  const bh = Math.max(6, maxYPad - minYPad);
+  const cx = minXPad + bw / 2;
+  const cy = minYPad + bh / 2;
+
+  const normalizeStroke = (stroke: { x: number; y: number }[]) =>
+    stroke.map((p) => ({
+      x: ((p.x - minXPad) / bw) * 100,
+      y: ((p.y - minYPad) / bh) * 100,
+    }));
+
+  const content = strokes
+    .filter((stroke) => stroke.length > 1)
+    .map((stroke) => pointsToSvgPath(normalizeStroke(stroke)))
+    .filter(Boolean)
+    .join(' ');
+
+  if (!content) return null;
+
+  return { content, x: cx, y: cy, width: bw, height: bh };
+}
+
+/**
  * Combines all canvas elements into a single clean, production-ready vector SVG file.
  */
 export function generateCompositeSvg(elements: CanvasElement[], jewelry: JewelryItem): string {
