@@ -1,4 +1,4 @@
-import { CanvasElement, CanvasRegion } from '../types';
+import { CanvasElement, CanvasRegion, isErasableLayer } from '../types';
 
 const CAPTURE_SIZE = 512;
 const MIN_REGION_SIZE = 3;
@@ -42,7 +42,7 @@ function buildCanvasCompositeMarkup(elements: CanvasElement[]): { defs: string; 
 
     const relatedErasers = erasers.filter((e) => e.targetElementId === el.id);
     let maskAttr = '';
-    if (relatedErasers.length > 0) {
+    if (isErasableLayer(el.type) && relatedErasers.length > 0) {
       const maskId = `cap-erase-${el.id}`;
       const strokes = relatedErasers
         .map(
@@ -69,7 +69,7 @@ function buildCanvasCompositeMarkup(elements: CanvasElement[]): { defs: string; 
     } else if (el.type === 'text') {
       const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
       const fontSize = Math.min(32, 160 / Math.max(el.content.length, 1));
-      content += `<g transform="${transform}"><g${maskAttr}><text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" fill="#121214" font-weight="bold" font-family="serif">${escapeXml(el.content)}</text></g></g>`;
+      content += `<g transform="${transform}"><text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" fill="#121214" font-weight="bold" font-family="serif">${escapeXml(el.content)}</text></g>`;
     }
   }
 

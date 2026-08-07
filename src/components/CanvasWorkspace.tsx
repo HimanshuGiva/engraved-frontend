@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CanvasElement, CanvasRegion, JewelryItem } from '../types';
+import { CanvasElement, CanvasRegion, JewelryItem, isErasableLayer } from '../types';
 import { ToolMode } from './Toolbar';
-import { pointsToSvgPath, buildEraserMaskDataUri, buildFreehandSessionData, eraserStrokesFromElements, EraserStroke } from '../utils/svgUtils';
+import { pointsToSvgPath, buildEraserMaskDataUri, buildFreehandSessionData, eraserStrokesFromElements, EraserStroke, canvasPointsToLocalSubpaths, subpathsToSvgPath } from '../utils/svgUtils';
 import { normalizeCanvasRegion } from '../utils/canvasCapture';
 import { Sparkles, Pencil, Upload } from 'lucide-react';
 
@@ -13,8 +13,10 @@ interface CanvasWorkspaceProps {
   activeTool: ToolMode;
   onSelectElement: (id: string | null) => void;
   onRegionSelect: (region: CanvasRegion | null) => void;
-  onUpdateElement: (updated: CanvasElement, select?: boolean) => void;
+  onUpdateElement: (updated: CanvasElement, select?: boolean, recordHistory?: boolean) => void;
+  onMoveElement: (id: string, x: number, y: number) => void;
   onAddElement: (element: CanvasElement, select?: boolean) => void;
+  onAddElements: (elements: CanvasElement[], select?: boolean) => void;
   onSelectTool?: (tool: ToolMode) => void;
   onOpenAiModal: () => void;
   onOpenUploadModal: () => void;
@@ -44,10 +46,12 @@ function toLocalPercent(px: number, py: number, el: CanvasElement): { x: number;
   };
 }
 
-// Element types that can meaningfully be erased from — text and other
-// eraser layers are excluded from hit-testing so the eraser always targets
-// real artwork (an image, AI vector, shape, or hand-drawn stroke).
-const ERASABLE_TYPES: CanvasElement['type'][] = ['svg_ai', 'freehand_draw', 'handwriting', 'shape', 'uploaded_image'];
+const ERASER_CURSOR =
+  'url("data:image/svg+xml,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="#121214" stroke="#C5A059" stroke-width="1.2" d="M15.5 2.5l6 6-8.5 8.5H8v-5.5z"/><rect x="6" y="17" width="12" height="3" rx="1" fill="#C5A059"/></svg>'
+  ) +
+  '") 5 19, crosshair';
 
 /** Inline SVG mask: white = visible, black strokes = punched-out holes. */
 function EraserMaskDef({ maskId, strokes }: { maskId: string; strokes: EraserStroke[] }) {
@@ -79,7 +83,9 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   onSelectElement,
   onRegionSelect,
   onUpdateElement,
+  onMoveElement,
   onAddElement,
+  onAddElements,
   onSelectTool,
   onOpenAiModal,
   onOpenUploadModal,
@@ -159,11 +165,17 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elements, drawSessionElementId]);
 
-  // Eraser tool state — the erase stroke is recorded directly in the
-  // target element's own local coordinate space (see toLocalPercent), so no
-  // separate global-to-local conversion is needed when committing it.
-  const [eraseTargetId, setEraseTargetId] = useState<string | null>(null);
-  const [eraseLocalPoints, setEraseLocalPoints] = useState<{ x: number; y: number }[]>([]);
+  useEffect(() => {
+    if (activeTool === 'erase') {
+      onSelectElement(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool]);
+
+  // Eraser records one canvas-space stroke and slices it into every layer the
+  // stroke actually crosses so a single drag can erase across overlapping art.
+  const [isErasing, setIsErasing] = useState(false);
+  const [eraseCanvasPoints, setEraseCanvasPoints] = useState<{ x: number; y: number }[]>([]);
 
   // Region marquee selection
   const [isSelectingRegion, setIsSelectingRegion] = useState(false);
@@ -195,47 +207,19 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool]);
 
-  // Dragging & Transform state
+  // Dragging & Transform state — position preview stays local until
+  // pointer-up so one undo step covers the whole move, not every pixel.
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
+  const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
 
   const pointInElementBounds = (px: number, py: number, el: CanvasElement) => {
     const local = toLocalPercent(px, py, el);
     return local.x >= 0 && local.x <= 100 && local.y >= 0 && local.y <= 100;
   };
 
-  // Which layer an erase stroke should affect. When layers overlap (common
-  // when everything is centered on the pendant), the explicitly selected
-  // layer wins over raw z-index hit-testing so erasing targets what the
-  // user picked in the Layers panel, not whichever shape happens to be on top.
-  const findEraseTarget = (px: number, py: number): CanvasElement | null => {
-    if (selectedElementId) {
-      const selected = elements.find((el) => el.id === selectedElementId);
-      if (selected && ERASABLE_TYPES.includes(selected.type) && pointInElementBounds(px, py, selected)) {
-        return selected;
-      }
-    }
-
-    const candidates = [...elements]
-      .filter((el) => ERASABLE_TYPES.includes(el.type))
-      .sort((a, b) => b.zIndex - a.zIndex);
-    for (const el of candidates) {
-      if (pointInElementBounds(px, py, el)) return el;
-    }
-
-    if (selectedElementId) {
-      const selected = elements.find((el) => el.id === selectedElementId);
-      if (selected && ERASABLE_TYPES.includes(selected.type)) return selected;
-    }
-    return null;
-  };
-
-  const beginEraseStroke = (
-    clientX: number,
-    clientY: number,
-    target: CanvasElement,
-    pointerId: number
-  ) => {
+  const beginEraseStroke = (clientX: number, clientY: number, pointerId: number) => {
     try {
       containerRef.current?.setPointerCapture(pointerId);
     } catch {}
@@ -243,8 +227,70 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     const point = pointerToCanvasPercent(clientX, clientY);
     if (!point) return;
 
-    setEraseTargetId(target.id);
-    setEraseLocalPoints([toLocalPercent(point.x, point.y, target)]);
+    onSelectElement(null);
+    setIsErasing(true);
+    setEraseCanvasPoints([point]);
+  };
+
+  const commitEraseStroke = () => {
+    if (!isErasing || eraseCanvasPoints.length < 2) return;
+
+    const stamp = Date.now();
+    const baseZ = elements.length;
+    const newErasers: CanvasElement[] = [];
+
+    elements
+      .filter((el) => isErasableLayer(el.type))
+      .forEach((target, index) => {
+        const subpaths = canvasPointsToLocalSubpaths(
+          eraseCanvasPoints,
+          target,
+          pointInElementBounds,
+          toLocalPercent
+        );
+        const pathD = subpathsToSvgPath(subpaths);
+        if (!pathD) return;
+
+        newErasers.push({
+          id: `erase-${stamp}-${target.id}`,
+          type: 'eraser',
+          name: `Eraser Layer (on ${target.name})`,
+          x: target.x,
+          y: target.y,
+          width: target.width,
+          height: target.height,
+          rotation: target.rotation,
+          zIndex: baseZ + 1 + index,
+          content: pathD,
+          strokeWidth: eraserSize,
+          targetElementId: target.id,
+        });
+      });
+
+    if (newErasers.length) {
+      onAddElements(newErasers);
+    }
+  };
+
+  const endEraseStroke = () => {
+    setIsErasing(false);
+    setEraseCanvasPoints([]);
+  };
+
+  const commitDrag = () => {
+    if (!draggingId || !dragPosition || !dragStartPosRef.current) return;
+    const { x: startX, y: startY } = dragStartPosRef.current;
+    if (dragPosition.x !== startX || dragPosition.y !== startY) {
+      onMoveElement(draggingId, dragPosition.x, dragPosition.y);
+    }
+    dragStartPosRef.current = null;
+    setDragPosition(null);
+  };
+
+  const cancelDrag = () => {
+    dragStartPosRef.current = null;
+    setDragPosition(null);
+    setDraggingId(null);
   };
 
   // Get SVG clip path shape style for the selected SKU - Large immersive dimensions
@@ -311,17 +357,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       setIsDrawingFreehand(true);
       setCurrentDrawPoints([{ x: xPct, y: yPct }]);
     } else if (activeTool === 'erase') {
-      const container = containerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-
-      const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-      const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-
-      const target = findEraseTarget(xPct, yPct);
-      if (!target) return;
-
-      beginEraseStroke(e.clientX, e.clientY, target, e.pointerId);
+      beginEraseStroke(e.clientX, e.clientY, e.pointerId);
     }
   };
 
@@ -347,20 +383,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           drawRafRef.current = null;
         });
       }
-    } else if (activeTool === 'erase' && eraseTargetId) {
-      const target = elements.find((el) => el.id === eraseTargetId);
-      if (!target) return;
-
-      const container = containerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-
-      const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-      const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-
-      setEraseLocalPoints((prev) => [...prev, toLocalPercent(xPct, yPct, target)]);
+    } else if (activeTool === 'erase' && isErasing) {
+      const point = pointerToCanvasPercent(e.clientX, e.clientY);
+      if (point) setEraseCanvasPoints((prev) => [...prev, point]);
     } else if (draggingId) {
-      // Element dragging
       const container = containerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
@@ -368,14 +394,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       const xPct = ((e.clientX - rect.left) / rect.width) * 100 - dragOffset.x;
       const yPct = ((e.clientY - rect.top) / rect.height) * 100 - dragOffset.y;
 
-      const targetEl = elements.find((el) => el.id === draggingId);
-      if (targetEl) {
-        onUpdateElement({
-          ...targetEl,
-          x: Math.max(0, Math.min(100, xPct)),
-          y: Math.max(0, Math.min(100, yPct)),
-        });
-      }
+      setDragPosition({
+        x: Math.max(0, Math.min(100, xPct)),
+        y: Math.max(0, Math.min(100, yPct)),
+      });
     }
   };
 
@@ -467,34 +489,14 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       }
       setCurrentDrawPoints([]);
       drawPointsRef.current = [];
-    } else if (activeTool === 'erase' && eraseTargetId) {
-      const target = elements.find((el) => el.id === eraseTargetId);
-      if (target && eraseLocalPoints.length > 1) {
-        const pathD = pointsToSvgPath(eraseLocalPoints);
-        const newEraserElement: CanvasElement = {
-          id: `erase-${Date.now()}`,
-          type: 'eraser',
-          name: `Eraser Layer (on ${target.name})`,
-          // Mirrors the target's box purely for bookkeeping/labeling — the
-          // mask itself renders inside the target's own local space, so it
-          // stays perfectly aligned even if the target moves afterwards.
-          x: target.x,
-          y: target.y,
-          width: target.width,
-          height: target.height,
-          rotation: target.rotation,
-          zIndex: elements.length + 1,
-          content: pathD,
-          strokeWidth: eraserSize,
-          targetElementId: target.id,
-        };
-        onAddElement(newEraserElement);
-        onSelectElement(target.id);
-      }
-      setEraseTargetId(null);
-      setEraseLocalPoints([]);
+    } else if (activeTool === 'erase' && isErasing) {
+      commitEraseStroke();
+      endEraseStroke();
     }
 
+    if (draggingId) {
+      commitDrag();
+    }
     setDraggingId(null);
   };
 
@@ -503,6 +505,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       setIsSelectingRegion(false);
       setRegionAnchor(null);
       setRegionCursor(null);
+      return;
+    }
+    if (draggingId) {
+      cancelDrag();
       return;
     }
     if (activeTool === 'draw' || activeTool === 'erase') {
@@ -515,35 +521,17 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       handlePointerUp();
       return;
     }
+    if (draggingId) {
+      commitDrag();
+      setDraggingId(null);
+      return;
+    }
     if (activeTool === 'draw' || activeTool === 'erase') {
       handlePointerUp();
     }
   };
 
   const startDragging = (e: React.PointerEvent | React.MouseEvent, el: CanvasElement) => {
-    if (activeTool === 'erase') {
-      if (!ERASABLE_TYPES.includes(el.type)) return;
-      e.stopPropagation();
-
-      const point = pointerToCanvasPercent(e.clientX, e.clientY);
-      if (!point) return;
-
-      let target = el;
-      if (selectedElementId) {
-        const selected = elements.find((item) => item.id === selectedElementId);
-        if (
-          selected &&
-          ERASABLE_TYPES.includes(selected.type) &&
-          pointInElementBounds(point.x, point.y, selected)
-        ) {
-          target = selected;
-        }
-      }
-
-      onSelectElement(target.id);
-      beginEraseStroke(e.clientX, e.clientY, target, (e as React.PointerEvent).pointerId);
-      return;
-    }
     if (activeTool !== 'select') return;
     e.stopPropagation();
     onRegionSelect(null);
@@ -557,6 +545,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     const mouseYPct = ((e.clientY - rect.top) / rect.height) * 100;
 
     setDraggingId(el.id);
+    dragStartPosRef.current = { x: el.x, y: el.y };
+    setDragPosition({ x: el.x, y: el.y });
     setDragOffset({
       x: mouseXPct - el.x,
       y: mouseYPct - el.y,
@@ -601,8 +591,9 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             onPointerCancel={handlePointerCancel}
             onLostPointerCapture={handleLostPointerCapture}
             className={`relative bg-[#FAF8F5] border-2 border-[#E8E2D5] shadow-inner overflow-hidden select-none touch-none transition-all flex-shrink-0 ${
-              activeTool === 'draw' || activeTool === 'erase' ? 'cursor-crosshair' : 'cursor-default'
+              activeTool === 'draw' ? 'cursor-crosshair' : activeTool === 'erase' ? '' : 'cursor-default'
             } ${getShapeStyle()}`}
+            style={activeTool === 'erase' ? { cursor: ERASER_CURSOR } : undefined}
           >
 
 
@@ -650,6 +641,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               .filter((el) => el.type !== 'eraser')
               .map((el) => {
               const isSelected =
+                activeTool !== 'erase' &&
                 selectedElementId === el.id &&
                 !isDrawingFreehand &&
                 pendingDrawSelectionId !== el.id;
@@ -658,28 +650,44 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               // a CSS mask on a wrapper div so the element's own `content`
               // is never modified — deleting the eraser layer (from the
               // Layers panel) instantly restores the original artwork.
-              const relatedErasers = elements.filter(
-                (e) => e.type === 'eraser' && e.targetElementId === el.id
-              );
+              const isErasable = isErasableLayer(el.type);
+              const relatedErasers = isErasable
+                ? elements.filter((e) => e.type === 'eraser' && e.targetElementId === el.id)
+                : [];
 
               const liveErasing =
-                activeTool === 'erase' &&
-                eraseTargetId === el.id &&
-                eraseLocalPoints.length > 1;
+                isErasable && activeTool === 'erase' && isErasing && eraseCanvasPoints.length > 1;
               const eraseStrokes: EraserStroke[] = eraserStrokesFromElements(relatedErasers);
               if (liveErasing) {
-                eraseStrokes.push({
-                  content: pointsToSvgPath(eraseLocalPoints),
-                  strokeWidth: eraserSize,
-                });
+                const subpaths = canvasPointsToLocalSubpaths(
+                  eraseCanvasPoints,
+                  el,
+                  pointInElementBounds,
+                  toLocalPercent
+                );
+                const livePath = subpathsToSvgPath(subpaths);
+                if (livePath) {
+                  eraseStrokes.push({
+                    content: livePath,
+                    strokeWidth: eraserSize,
+                  });
+                }
               }
               const hasEraseMask = eraseStrokes.length > 0;
               const inlineMaskId = `erase-mask-${el.id}`;
               const inlineMaskRef = hasEraseMask ? `url(#${inlineMaskId})` : undefined;
 
-              const liveStrokeForCss = liveErasing
-                ? { content: pointsToSvgPath(eraseLocalPoints), strokeWidth: eraserSize }
-                : undefined;
+              const liveStrokeForCss = (() => {
+                if (!liveErasing) return undefined;
+                const subpaths = canvasPointsToLocalSubpaths(
+                  eraseCanvasPoints,
+                  el,
+                  pointInElementBounds,
+                  toLocalPercent
+                );
+                const livePath = subpathsToSvgPath(subpaths);
+                return livePath ? { content: livePath, strokeWidth: eraserSize } : undefined;
+              })();
               const maskUrl =
                 el.type === 'svg_ai' || el.type === 'uploaded_image'
                   ? buildEraserMaskDataUri(relatedErasers, liveStrokeForCss)
@@ -698,12 +706,14 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                 : {};
 
               const wrapperRingClass = isSelected
-                ? activeTool === 'erase'
-                  ? 'ring-2 ring-[#C5A059] ring-offset-1 rounded'
-                  : 'ring-2 ring-[#C5A059] rounded'
-                : activeTool !== 'draw'
+                ? 'ring-2 ring-[#C5A059] rounded'
+                : activeTool !== 'draw' && activeTool !== 'erase'
                 ? 'hover:ring-1 hover:ring-[#C5A059]/50'
                 : '';
+
+              const isDragging = draggingId === el.id;
+              const displayX = isDragging && dragPosition ? dragPosition.x : el.x;
+              const displayY = isDragging && dragPosition ? dragPosition.y : el.y;
 
               return (
                 <div
@@ -711,27 +721,24 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   onPointerDown={(e) => startDragging(e, el)}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (isDrawingFreehand) return;
-                    if (activeTool === 'erase') {
-                      if (ERASABLE_TYPES.includes(el.type)) onSelectElement(el.id);
-                      return;
-                    }
+                    if (isDrawingFreehand || activeTool === 'erase') return;
                     onSelectElement(el.id);
                   }}
                   style={{
                     position: 'absolute',
-                    left: `${el.x}%`,
-                    top: `${el.y}%`,
+                    left: `${displayX}%`,
+                    top: `${displayY}%`,
                     width: `${el.width}%`,
                     height: `${el.height}%`,
                     transform: `translate(-50%, -50%) rotate(${el.rotation}deg)`,
                     zIndex: el.zIndex,
-                    pointerEvents: activeTool === 'draw' ? 'none' : undefined,
+                    pointerEvents: activeTool === 'draw' || activeTool === 'erase' ? 'none' : undefined,
+                    cursor: activeTool === 'erase' ? ERASER_CURSOR : undefined,
                   }}
                   className={`group absolute transition-shadow ${
-                    activeTool === 'erase'
-                      ? 'cursor-crosshair'
-                      : 'cursor-grab active:cursor-grabbing'
+                    activeTool === 'select'
+                      ? 'cursor-grab active:cursor-grabbing'
+                      : ''
                   } ${wrapperRingClass}`}
                 >
                   {/* Element Content Render — eraser strokes punch holes via SVG/CSS mask */}
@@ -776,11 +783,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                         preserveAspectRatio="xMidYMid meet"
                         className="w-full h-full pointer-events-none select-none overflow-visible"
                       >
-                        {hasEraseMask && (
-                          <defs>
-                            <EraserMaskDef maskId={inlineMaskId} strokes={eraseStrokes} />
-                          </defs>
-                        )}
                         <text
                           x="50"
                           y="52"
@@ -788,7 +790,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                           dominantBaseline="middle"
                           fontSize={Math.min(32, 160 / Math.max(el.content.length, 1))}
                           className={`fill-[#121214] font-bold ${getFontClass(el.color)}`}
-                          mask={inlineMaskRef}
                         >
                           {el.content}
                         </text>
