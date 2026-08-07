@@ -1,0 +1,560 @@
+import React, { useRef, useState } from 'react';
+import { CanvasElement, JewelryItem } from '../types';
+import { ToolMode } from './Toolbar';
+import { pointsToSvgPath, buildEraserMaskDataUri } from '../utils/svgUtils';
+import { Sparkles, Pencil, Upload } from 'lucide-react';
+
+interface CanvasWorkspaceProps {
+  jewelry: JewelryItem;
+  elements: CanvasElement[];
+  selectedElementId: string | null;
+  activeTool: ToolMode;
+  onSelectElement: (id: string | null) => void;
+  onUpdateElement: (updated: CanvasElement) => void;
+  onAddElement: (element: CanvasElement) => void;
+  onSelectTool?: (tool: ToolMode) => void;
+  onOpenAiModal: () => void;
+  onOpenUploadModal: () => void;
+  eraserSize?: number;
+}
+
+/**
+ * Converts a point in canvas-percent space (0-100 across the whole
+ * engraving surface) into the target element's own LOCAL 0-100 box space
+ * (where local (50, 50) is always that element's visual center), inverting
+ * exactly the translate/rotate transform the element's wrapper div uses to
+ * place itself on the canvas. This lets an eraser stroke be recorded once,
+ * in the target's own coordinate space, so the resulting mask stays
+ * perfectly aligned even if the target is later moved, scaled, or rotated.
+ */
+function toLocalPercent(px: number, py: number, el: CanvasElement): { x: number; y: number } {
+  const rad = (-el.rotation * Math.PI) / 180;
+  const dx = px - el.x;
+  const dy = py - el.y;
+  const rx = dx * Math.cos(rad) - dy * Math.sin(rad);
+  const ry = dx * Math.sin(rad) + dy * Math.cos(rad);
+  const safeW = Math.max(el.width, 0.0001);
+  const safeH = Math.max(el.height, 0.0001);
+  return {
+    x: 50 + (rx / safeW) * 100,
+    y: 50 + (ry / safeH) * 100,
+  };
+}
+
+// Element types that can meaningfully be erased from — text and other
+// eraser layers are excluded from hit-testing so the eraser always targets
+// real artwork (an image, AI vector, shape, or hand-drawn stroke).
+const ERASABLE_TYPES: CanvasElement['type'][] = ['svg_ai', 'freehand_draw', 'handwriting', 'shape', 'uploaded_image'];
+
+export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
+  jewelry,
+  elements,
+  selectedElementId,
+  activeTool,
+  onSelectElement,
+  onUpdateElement,
+  onAddElement,
+  onSelectTool,
+  onOpenAiModal,
+  onOpenUploadModal,
+  eraserSize = 6,
+}) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
+  const [currentDrawPoints, setCurrentDrawPoints] = useState<{ x: number; y: number }[]>([]);
+
+  // Eraser tool state — the erase stroke is recorded directly in the
+  // target element's own local coordinate space (see toLocalPercent), so no
+  // separate global-to-local conversion is needed when committing it.
+  const [eraseTargetId, setEraseTargetId] = useState<string | null>(null);
+  const [eraseLocalPoints, setEraseLocalPoints] = useState<{ x: number; y: number }[]>([]);
+
+  // Dragging & Transform state
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Finds which element an erase stroke starting at (px, py) [canvas %]
+  // should target: the topmost erasable element actually under the pointer,
+  // falling back to the current selection so a slightly-out-of-bounds
+  // stroke on an already-selected element still works as expected.
+  const findEraseTarget = (px: number, py: number): CanvasElement | null => {
+    const candidates = [...elements]
+      .filter((el) => ERASABLE_TYPES.includes(el.type))
+      .sort((a, b) => b.zIndex - a.zIndex);
+    for (const el of candidates) {
+      const local = toLocalPercent(px, py, el);
+      if (local.x >= 0 && local.x <= 100 && local.y >= 0 && local.y <= 100) {
+        return el;
+      }
+    }
+    if (selectedElementId) {
+      const sel = elements.find((el) => el.id === selectedElementId);
+      if (sel && ERASABLE_TYPES.includes(sel.type)) return sel;
+    }
+    return null;
+  };
+
+  // Get SVG clip path shape style for the selected SKU - Large immersive dimensions
+  const getShapeStyle = () => {
+    switch (jewelry.constraints.shape) {
+      case 'circle':
+        return 'w-72 h-72 sm:w-[420px] sm:h-[420px] rounded-full';
+      case 'squircle':
+        return 'w-72 h-72 sm:w-[420px] sm:h-[420px] rounded-[28%]';
+      case 'bar':
+        return 'w-40 h-80 sm:w-52 sm:h-[460px] rounded-2xl';
+      case 'heart':
+        return 'w-72 h-72 sm:w-[420px] sm:h-[420px] rounded-[30%]';
+      case 'oval':
+        return 'w-64 h-80 sm:w-72 sm:h-[440px] rounded-[50%]';
+      case 'rectangle':
+      default:
+        return 'w-72 h-72 sm:w-[420px] sm:h-[420px] rounded-2xl';
+    }
+  };
+
+  // Freehand Drawing pointer events
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activeTool === 'draw') {
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {}
+
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+
+      const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+      const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+
+      setIsDrawingFreehand(true);
+      setCurrentDrawPoints([{ x: xPct, y: yPct }]);
+    } else if (activeTool === 'erase') {
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {}
+
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+
+      const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+      const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+
+      const target = findEraseTarget(xPct, yPct);
+      if (!target) return;
+
+      setEraseTargetId(target.id);
+      setEraseLocalPoints([toLocalPercent(xPct, yPct, target)]);
+    } else {
+      // Only deselect if pointer down occurred directly on the background canvas itself
+      if (e.target === containerRef.current) {
+        onSelectElement(null);
+      }
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activeTool === 'draw' && isDrawingFreehand) {
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+
+      const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+      const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+
+      setCurrentDrawPoints((prev) => [...prev, { x: xPct, y: yPct }]);
+    } else if (activeTool === 'erase' && eraseTargetId) {
+      const target = elements.find((el) => el.id === eraseTargetId);
+      if (!target) return;
+
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+
+      const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+      const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+
+      setEraseLocalPoints((prev) => [...prev, toLocalPercent(xPct, yPct, target)]);
+    } else if (draggingId) {
+      // Element dragging
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+
+      const xPct = ((e.clientX - rect.left) / rect.width) * 100 - dragOffset.x;
+      const yPct = ((e.clientY - rect.top) / rect.height) * 100 - dragOffset.y;
+
+      const targetEl = elements.find((el) => el.id === draggingId);
+      if (targetEl) {
+        onUpdateElement({
+          ...targetEl,
+          x: Math.max(0, Math.min(100, xPct)),
+          y: Math.max(0, Math.min(100, yPct)),
+        });
+      }
+    }
+  };
+
+  const handlePointerUp = (e?: React.PointerEvent<HTMLDivElement>) => {
+    if (e) {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+
+    if (activeTool === 'draw' && isDrawingFreehand) {
+      setIsDrawingFreehand(false);
+      if (currentDrawPoints.length > 1) {
+        // Calculate exact bounding box of drawn points
+        const xs = currentDrawPoints.map((p) => p.x);
+        const ys = currentDrawPoints.map((p) => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+
+        // Add 2% padding so line caps/edges aren't cut off
+        const pad = 2;
+        const minXPad = Math.max(0, minX - pad);
+        const maxXPad = Math.min(100, maxX + pad);
+        const minYPad = Math.max(0, minY - pad);
+        const maxYPad = Math.min(100, maxY + pad);
+
+        const bw = Math.max(6, maxXPad - minXPad);
+        const bh = Math.max(6, maxYPad - minYPad);
+        const cx = minXPad + bw / 2;
+        const cy = minYPad + bh / 2;
+
+        // Normalize points into 0-100 viewBox space inside the bounding box
+        const normalizedPoints = currentDrawPoints.map((p) => ({
+          x: ((p.x - minXPad) / bw) * 100,
+          y: ((p.y - minYPad) / bh) * 100,
+        }));
+
+        const pathD = pointsToSvgPath(normalizedPoints);
+        const newDrawElement: CanvasElement = {
+          id: `draw-${Date.now()}`,
+          type: 'freehand_draw',
+          name: 'Hand Drawn Sketch',
+          x: cx,
+          y: cy,
+          width: bw,
+          height: bh,
+          rotation: 0,
+          zIndex: elements.length + 1,
+          content: pathD,
+          strokeWidth: 1,
+        };
+        onAddElement(newDrawElement);
+        onSelectElement(newDrawElement.id);
+      }
+      setCurrentDrawPoints([]);
+    } else if (activeTool === 'erase' && eraseTargetId) {
+      const target = elements.find((el) => el.id === eraseTargetId);
+      if (target && eraseLocalPoints.length > 1) {
+        const pathD = pointsToSvgPath(eraseLocalPoints);
+        const newEraserElement: CanvasElement = {
+          id: `erase-${Date.now()}`,
+          type: 'eraser',
+          name: `Eraser Layer (on ${target.name})`,
+          // Mirrors the target's box purely for bookkeeping/labeling — the
+          // mask itself renders inside the target's own local space, so it
+          // stays perfectly aligned even if the target moves afterwards.
+          x: target.x,
+          y: target.y,
+          width: target.width,
+          height: target.height,
+          rotation: target.rotation,
+          zIndex: elements.length + 1,
+          content: pathD,
+          strokeWidth: eraserSize,
+          targetElementId: target.id,
+        };
+        onAddElement(newEraserElement);
+        onSelectElement(newEraserElement.id);
+      }
+      setEraseTargetId(null);
+      setEraseLocalPoints([]);
+    }
+
+    setDraggingId(null);
+  };
+
+  const startDragging = (e: React.PointerEvent | React.MouseEvent, el: CanvasElement) => {
+    if (activeTool === 'draw' || activeTool === 'erase') return;
+    e.stopPropagation();
+    onSelectElement(el.id);
+
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+
+    const mouseXPct = ((e.clientX - rect.left) / rect.width) * 100;
+    const mouseYPct = ((e.clientY - rect.top) / rect.height) * 100;
+
+    setDraggingId(el.id);
+    setDragOffset({
+      x: mouseXPct - el.x,
+      y: mouseYPct - el.y,
+    });
+  };
+
+  const getFontClass = (fontId?: string) => {
+    switch (fontId) {
+      case 'sans': return 'font-sans';
+      case 'script': return 'font-serif italic';
+      case 'mono': return 'font-mono';
+      case 'serif':
+      default: return 'font-serif';
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center w-full h-full">
+      
+      {/* Canvas Frame Container - Expanded Large Viewport */}
+      <div className="relative w-full max-w-2xl min-h-[460px] sm:min-h-[520px] flex items-center justify-center p-2 sm:p-4">
+        
+        {/* Physical Jewelry Bezel Representation */}
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              onSelectElement(null);
+            }
+          }}
+          className="relative w-full h-full bg-white p-6 sm:p-10 rounded-3xl border border-[#E8E2D5] shadow-[0_8px_30px_rgb(0,0,0,0.03)] flex flex-col items-center justify-center"
+        >
+          
+          {/* Pendant Chain Loop / Bail */}
+          <div className="w-6 h-8 -mb-1 rounded-t-full border-2 border-[#C5A059] bg-gradient-to-b from-[#FBF8F1] to-white z-10 shadow-2xs flex-shrink-0" />
+
+          {/* Real Engraving Area Surface */}
+          <div
+            ref={containerRef}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            className={`relative bg-[#FAF8F5] border-2 border-[#E8E2D5] shadow-inner overflow-hidden select-none cursor-crosshair touch-none transition-all flex-shrink-0 ${getShapeStyle()}`}
+          >
+
+
+            {/* Empty Canvas Starter Screen */}
+            {elements.length === 0 && currentDrawPoints.length === 0 && activeTool !== 'draw' && activeTool !== 'erase' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10 space-y-5 bg-white/95 backdrop-blur-xs">
+                <div className="text-[#121214] font-serif font-bold text-xl sm:text-2xl">
+                  What would you like to personalize?
+                </div>
+
+                <div className="grid grid-cols-3 gap-2.5 w-full max-w-md text-xs">
+                  <button
+                    onClick={onOpenAiModal}
+                    className="p-3.5 bg-[#121214] text-[#C5A059] border border-[#C5A059]/40 rounded-2xl font-bold uppercase tracking-widest text-[10px] flex flex-col items-center space-y-1.5 shadow-2xs hover:bg-[#C5A059] hover:text-white transition-all hover:scale-102"
+                  >
+                    <Sparkles className="w-5 h-5 text-[#C5A059] group-hover:text-white" />
+                    <span>Create AI</span>
+                  </button>
+
+                  <button
+                    onClick={() => onSelectTool?.('draw')}
+                    className="p-3.5 bg-white text-[#121214] border border-[#E8E2D5] rounded-2xl font-bold text-[10px] uppercase tracking-widest flex flex-col items-center space-y-1.5 shadow-2xs hover:bg-[#FAF8F5] hover:border-[#C5A059] transition-all hover:scale-102"
+                  >
+                    <Pencil className="w-5 h-5 text-[#C5A059]" />
+                    <span>Draw</span>
+                  </button>
+
+                  <button
+                    onClick={onOpenUploadModal}
+                    className="p-3.5 bg-white text-[#121214] border border-[#E8E2D5] rounded-2xl font-bold text-[10px] uppercase tracking-widest flex flex-col items-center space-y-1.5 shadow-2xs hover:bg-[#FAF8F5] hover:border-[#C5A059] transition-all hover:scale-102"
+                  >
+                    <Upload className="w-5 h-5 text-[#C5A059]" />
+                    <span>Upload</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Rendered Elements Layer — eraser elements never get their own
+               box here; they only ever appear as a mask applied to the
+               element they target (see relatedErasers below), which is what
+               keeps erasing fully non-destructive and independently
+               undoable/deletable as its own layer. */}
+            {elements
+              .filter((el) => el.type !== 'eraser')
+              .map((el) => {
+              const isSelected = selectedElementId === el.id;
+
+              // Any eraser layers currently masking this element. Applied as
+              // a CSS mask on a wrapper div so the element's own `content`
+              // is never modified — deleting the eraser layer (from the
+              // Layers panel) instantly restores the original artwork.
+              const relatedErasers = elements.filter(
+                (e) => e.type === 'eraser' && e.targetElementId === el.id
+              );
+              const maskUrl = buildEraserMaskDataUri(relatedErasers);
+              const contentStyle: React.CSSProperties = maskUrl
+                ? ({
+                    WebkitMaskImage: `url("${maskUrl}")`,
+                    maskImage: `url("${maskUrl}")`,
+                    WebkitMaskSize: '100% 100%',
+                    maskSize: '100% 100%',
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat',
+                    WebkitMaskPosition: 'center',
+                    maskPosition: 'center',
+                  } as React.CSSProperties)
+                : {};
+
+              return (
+                <div
+                  key={el.id}
+                  onPointerDown={(e) => startDragging(e, el)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement(el.id);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    left: `${el.x}%`,
+                    top: `${el.y}%`,
+                    width: `${el.width}%`,
+                    height: `${el.height}%`,
+                    transform: `translate(-50%, -50%) rotate(${el.rotation}deg)`,
+                    zIndex: el.zIndex,
+                  }}
+                  className={`group absolute cursor-grab active:cursor-grabbing transition-shadow ${
+                    isSelected ? 'ring-2 ring-[#C5A059] rounded' : 'hover:ring-1 hover:ring-[#C5A059]/50'
+                  }`}
+                >
+                  {/* Element Content Render — masked by any eraser layers targeting it */}
+                  <div className="w-full h-full" style={contentStyle}>
+                    {el.type === 'svg_ai' && (
+                      <div
+                        className="w-full h-full text-[#121214] flex items-center justify-center pointer-events-none [&>svg]:w-full [&>svg]:h-full [&>svg]:max-w-full [&>svg]:max-h-full"
+                        dangerouslySetInnerHTML={{ __html: el.content }}
+                      />
+                    )}
+
+                    {(el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') && (
+                      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full pointer-events-none overflow-visible">
+                        <path
+                          d={el.content}
+                          fill="none"
+                          stroke="#121214"
+                          strokeWidth={el.strokeWidth ?? 1}
+                          vectorEffect="non-scaling-stroke"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+
+                    {el.type === 'text' && (
+                      // Rendered as SVG (viewBox 0-100) so the text visually scales with the
+                      // element's width/height box — same approach the composite export and
+                      // freehand paths already use. A plain HTML <div> with a fixed font-size
+                      // class would keep the glyphs a constant size while only the bounding
+                      // box grew/shrank, which is why the "Scale Size" slider looked like it
+                      // did nothing for text.
+                      <svg
+                        viewBox="0 0 100 100"
+                        preserveAspectRatio="xMidYMid meet"
+                        className="w-full h-full pointer-events-none select-none overflow-visible"
+                      >
+                        <text
+                          x="50"
+                          y="52"
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize={Math.min(32, 160 / Math.max(el.content.length, 1))}
+                          className={`fill-[#121214] font-bold ${getFontClass(el.color)}`}
+                        >
+                          {el.content}
+                        </text>
+                      </svg>
+                    )}
+                  </div>
+
+                  {/* Live Erase Stroke Preview — drawn nested inside the
+                     target's own local space so it tracks its position/
+                     rotation/scale exactly; nothing here touches el.content. */}
+                  {activeTool === 'erase' && eraseTargetId === el.id && eraseLocalPoints.length > 1 && (
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none z-30 overflow-visible">
+                      <path
+                        d={pointsToSvgPath(eraseLocalPoints)}
+                        fill="none"
+                        stroke="#E11D48"
+                        strokeWidth={eraserSize}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeDasharray="3 2"
+                        opacity={0.55}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    </svg>
+                  )}
+
+                  {/* When a committed eraser layer is selected (e.g. from the
+                     Layers panel), highlight exactly where it will erase so
+                     it's easy to find and delete/undo. */}
+                  {relatedErasers
+                    .filter((er) => er.id === selectedElementId)
+                    .map((er) => (
+                      <svg
+                        key={er.id}
+                        viewBox="0 0 100 100"
+                        preserveAspectRatio="none"
+                        className="absolute inset-0 w-full h-full pointer-events-none z-30 overflow-visible"
+                      >
+                        <path
+                          d={er.content}
+                          fill="none"
+                          stroke="#E11D48"
+                          strokeWidth={er.strokeWidth ?? 8}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeDasharray="3 2"
+                          opacity={0.5}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      </svg>
+                    ))}
+
+                  {/* Selection Bounding Box Controls */}
+                  {isSelected && (
+                    <div className="absolute inset-0 border border-[#C5A059] pointer-events-none">
+                      <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-[#C5A059] rounded-full" />
+                      <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-[#C5A059] rounded-full" />
+                      <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-[#C5A059] rounded-full" />
+                      <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-[#C5A059] rounded-full" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Live Freehand Drawing Overlay */}
+            {isDrawingFreehand && currentDrawPoints.length > 1 && (
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none z-20">
+                <path
+                  d={pointsToSvgPath(currentDrawPoints)}
+                  fill="none"
+                  stroke="#121214"
+                  strokeWidth="1"
+                  vectorEffect="non-scaling-stroke"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  );
+};
+
+

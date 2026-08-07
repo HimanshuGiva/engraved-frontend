@@ -1,0 +1,6 @@
+{
+  "name": "GIVA Live-Engrave Studio",
+  "description": "Interactive AI + Human Jewelry Personalization Studio for GIVA in-store physical engraving preview and production.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
