@@ -42,18 +42,6 @@ export function validateEngravingDesign(
     }
 
     // 2. Stroke Width Check: Is stroke too thin for clear physical laser engraving?
-    if ((el.type === 'freehand_draw' || el.type === 'handwriting') && (el.strokeWidth || 3) < 2.2) {
-      issues.push({
-        id: `stroke-${el.id}`,
-        elementId: el.id,
-        severity: 'warning',
-        title: 'Thin lines detected',
-        message: `Your handwritten "${el.name}" has very fine lines that might not show up clearly on ${jewelry.material.replace('_', ' ')}.`,
-        type: 'thin_lines',
-        fixActionLabel: 'Thicken stroke lines',
-        canAutoFix: true,
-      });
-    }
 
     // 3. Text Size / Character count check
     if (el.type === 'text' && el.content.length > jewelry.constraints.maxCharacters) {
