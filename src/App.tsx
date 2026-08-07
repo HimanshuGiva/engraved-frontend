@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { JewelryItem, CanvasElement, SavedDesignBundle, AiOption } from './types';
+import { JewelryItem, CanvasElement, SavedDesignBundle, AiOption, CanvasRegion } from './types';
 import { JEWELRY_CATALOG } from './data/jewelryCatalog';
 import { Navbar } from './components/Navbar';
 import { JewelrySelector } from './components/JewelrySelector';
@@ -9,11 +9,13 @@ import { PropertiesPanel } from './components/PropertiesPanel';
 import { AiCreateModal } from './components/AiCreateModal';
 import { AiEnhanceModal } from './components/AiEnhanceModal';
 import { ImageUploadModal } from './components/ImageUploadModal';
+import { GiftQrModal } from './components/GiftQrModal';
 import { TextModal } from './components/TextModal';
 import { JewelryPreview } from './components/JewelryPreview';
 import { ConfirmationScreen } from './components/ConfirmationScreen';
 import { StoreAssociateDrawer } from './components/StoreAssociateDrawer';
 import { generateCompositeSvg, SHAPE_PRESETS, SHAPE_LABELS } from './utils/svgUtils';
+import { buildRegionVectorSvg, regionCenter } from './utils/canvasCapture';
 import { ArrowRight } from 'lucide-react';
 
 export default function App() {
@@ -27,6 +29,7 @@ export default function App() {
   const currentElements = elementsHistory[historyIndex] || [];
 
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<CanvasRegion | null>(null);
   const [activeTool, setActiveTool] = useState<ToolMode>('select');
   const [eraserSize, setEraserSize] = useState<number>(6);
 
@@ -34,10 +37,13 @@ export default function App() {
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isEnhanceModalOpen, setIsEnhanceModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isGiftQrModalOpen, setIsGiftQrModalOpen] = useState(false);
   const [isTextModalOpen, setIsTextModalOpen] = useState(false);
   const [isStoreAssociateOpen, setIsStoreAssociateOpen] = useState(false);
   const [refiningElement, setRefiningElement] = useState<CanvasElement | null>(null);
   const [enhancingElement, setEnhancingElement] = useState<CanvasElement | null>(null);
+  const [enhancingRegion, setEnhancingRegion] = useState<CanvasRegion | null>(null);
+  const [linkedMessageId, setLinkedMessageId] = useState<string | null>(null);
 
   // Saved Design
   const [savedBundle, setSavedBundle] = useState<SavedDesignBundle | null>(null);
@@ -74,6 +80,7 @@ export default function App() {
     updateElementsWithHistory(updated);
     if (select) {
       setSelectedElementId(newEl.id);
+      setSelectedRegion(null);
     }
   };
 
@@ -83,6 +90,7 @@ export default function App() {
     updateElementsWithHistory(updated);
     if (select) {
       setSelectedElementId(updatedEl.id);
+      setSelectedRegion(null);
     }
   };
 
@@ -173,8 +181,29 @@ export default function App() {
   };
 
   const handleApplyEnhance = (svgCode: string) => {
-    if (!enhancingElement) return;
     setActiveTool('select');
+
+    if (enhancingRegion) {
+      const center = regionCenter(enhancingRegion);
+      handleAddElement({
+        id: `region-enhanced-${Date.now()}`,
+        type: 'svg_ai',
+        name: 'Enhanced Region',
+        x: center.x,
+        y: center.y,
+        width: enhancingRegion.width,
+        height: enhancingRegion.height,
+        rotation: 0,
+        zIndex: currentElements.length + 1,
+        content: svgCode,
+        isAiGenerated: true,
+      });
+      setSelectedRegion(null);
+      setEnhancingRegion(null);
+      return;
+    }
+
+    if (!enhancingElement) return;
     handleUpdateElement({
       ...enhancingElement,
       type: 'svg_ai',
@@ -183,6 +212,42 @@ export default function App() {
       isAiGenerated: true,
     });
     setEnhancingElement(null);
+  };
+
+  const handleExtractRegion = (region: CanvasRegion) => {
+    const center = regionCenter(region);
+    const svgContent = buildRegionVectorSvg(currentElements, region);
+    setActiveTool('select');
+    setSelectedRegion(null);
+    handleAddElement({
+      id: `region-${Date.now()}`,
+      type: 'svg_ai',
+      name: 'Canvas Selection',
+      x: center.x,
+      y: center.y,
+      width: region.width,
+      height: region.height,
+      rotation: 0,
+      zIndex: currentElements.length + 1,
+      content: svgContent,
+    });
+  };
+
+  const handleAddGiftQrToCanvas = (svgContent: string, messageId: string, label: string) => {
+    setActiveTool('select');
+    setLinkedMessageId(messageId);
+    handleAddElement({
+      id: `qr-${Date.now()}`,
+      type: 'svg_ai',
+      name: label,
+      x: 50,
+      y: 50,
+      width: 28,
+      height: 28,
+      rotation: 0,
+      zIndex: currentElements.length + 1,
+      content: svgContent,
+    });
   };
 
   // Handle Text Addition
@@ -264,6 +329,7 @@ export default function App() {
         compositeSvg: composite,
         validationPassed: true,
         totalPriceInr: selectedJewelry.priceInr + selectedJewelry.engravingFeeInr,
+        messageId: linkedMessageId ?? undefined,
       };
 
       setSavedBundle(bundle);
@@ -278,6 +344,7 @@ export default function App() {
         compositeSvg: composite,
         validationPassed: true,
         totalPriceInr: selectedJewelry.priceInr + selectedJewelry.engravingFeeInr,
+        messageId: linkedMessageId ?? undefined,
       };
       setSavedBundle(bundle);
       setCurrentStep('confirm');
@@ -320,6 +387,7 @@ export default function App() {
                     setIsAiModalOpen(true);
                   }}
                   onOpenUploadModal={() => setIsUploadModalOpen(true)}
+                  onOpenGiftQrModal={() => setIsGiftQrModalOpen(true)}
                   onAddText={handleAddText}
                   onAddShape={handleAddShape}
                   canUndo={historyIndex > 0}
@@ -338,8 +406,16 @@ export default function App() {
                   jewelry={selectedJewelry || JEWELRY_CATALOG[0]}
                   elements={currentElements}
                   selectedElementId={selectedElementId}
+                  selectedRegion={selectedRegion}
                   activeTool={activeTool}
-                  onSelectElement={(id) => setSelectedElementId(id)}
+                  onSelectElement={(id) => {
+                    setSelectedElementId(id);
+                    if (id) setSelectedRegion(null);
+                  }}
+                  onRegionSelect={(region) => {
+                    setSelectedRegion(region);
+                    if (region) setSelectedElementId(null);
+                  }}
                   onUpdateElement={handleUpdateElement}
                   onAddElement={handleAddElement}
                   onSelectTool={(tool) => setActiveTool(tool)}
@@ -356,8 +432,13 @@ export default function App() {
               <div className="lg:col-span-4 space-y-4">
                 <PropertiesPanel
                   selectedElement={selectedElement}
+                  selectedRegion={selectedRegion}
                   elements={currentElements}
-                  onSelectElement={setSelectedElementId}
+                  onSelectElement={(id) => {
+                    setSelectedElementId(id);
+                    if (id) setSelectedRegion(null);
+                  }}
+                  onClearRegion={() => setSelectedRegion(null)}
                   onUpdateElement={handleUpdateElement}
                   onDeleteElement={handleDeleteElement}
                   onDuplicateElement={handleDuplicateElement}
@@ -367,9 +448,16 @@ export default function App() {
                     setIsAiModalOpen(true);
                   }}
                   onOpenAiEnhance={(el) => {
+                    setEnhancingRegion(null);
                     setEnhancingElement(el);
                     setIsEnhanceModalOpen(true);
                   }}
+                  onEnhanceRegion={(region) => {
+                    setEnhancingElement(null);
+                    setEnhancingRegion(region);
+                    setIsEnhanceModalOpen(true);
+                  }}
+                  onExtractRegion={handleExtractRegion}
                 />
 
                 {/* Primary CTA - Preview on Jewelry (Moved to right column below Properties/Layers) */}
@@ -420,20 +508,39 @@ export default function App() {
         />
       )}
 
-      {enhancingElement && (
+      {(enhancingElement || enhancingRegion) && (
         <AiEnhanceModal
           isOpen={isEnhanceModalOpen}
           onClose={() => {
             setIsEnhanceModalOpen(false);
             setEnhancingElement(null);
+            setEnhancingRegion(null);
           }}
-          element={enhancingElement}
-          eraserLayers={currentElements.filter(
-            (el) => el.type === 'eraser' && el.targetElementId === enhancingElement.id
-          )}
+          label={
+            enhancingRegion
+              ? 'selected canvas region'
+              : enhancingElement?.name ?? 'layer'
+          }
+          element={enhancingElement ?? undefined}
+          eraserLayers={
+            enhancingElement
+              ? currentElements.filter(
+                  (el) => el.type === 'eraser' && el.targetElementId === enhancingElement.id
+                )
+              : []
+          }
+          region={enhancingRegion ?? undefined}
+          canvasElements={currentElements}
           onApply={handleApplyEnhance}
         />
       )}
+
+      {/* Gift Message QR Modal */}
+      <GiftQrModal
+        isOpen={isGiftQrModalOpen}
+        onClose={() => setIsGiftQrModalOpen(false)}
+        onAddQrToCanvas={handleAddGiftQrToCanvas}
+      />
 
       {/* Image Upload Vectorizer Modal */}
       <ImageUploadModal

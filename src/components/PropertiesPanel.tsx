@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CanvasElement } from '../types';
+import { CanvasElement, CanvasRegion } from '../types';
 import {
   Sparkles,
   RotateCw,
@@ -12,31 +12,41 @@ import {
   AlignCenter,
   Sliders,
   Wand2,
+  Scan,
+  Plus,
 } from 'lucide-react';
 import { isEnhanceableElement } from '../utils/canvasCapture';
 
 interface PropertiesPanelProps {
   selectedElement: CanvasElement | null;
+  selectedRegion: CanvasRegion | null;
   elements: CanvasElement[];
   onSelectElement: (id: string | null) => void;
+  onClearRegion: () => void;
   onUpdateElement: (updated: CanvasElement) => void;
   onDeleteElement: (id: string) => void;
   onDuplicateElement: (id: string) => void;
   onReorderElement: (id: string, direction: 'front' | 'back') => void;
   onOpenAiRefine: (element: CanvasElement) => void;
   onOpenAiEnhance: (element: CanvasElement) => void;
+  onEnhanceRegion: (region: CanvasRegion) => void;
+  onExtractRegion: (region: CanvasRegion) => void;
 }
 
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   selectedElement,
+  selectedRegion,
   elements,
   onSelectElement,
+  onClearRegion,
   onUpdateElement,
   onDeleteElement,
   onDuplicateElement,
   onReorderElement,
   onOpenAiRefine,
   onOpenAiEnhance,
+  onEnhanceRegion,
+  onExtractRegion,
 }) => {
   const [activeTab, setActiveTab] = useState<'properties' | 'layers'>('properties');
 
@@ -45,6 +55,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       setActiveTab('properties');
     }
   }, [selectedElement?.id]);
+
+  useEffect(() => {
+    if (selectedRegion) {
+      setActiveTab('properties');
+    }
+  }, [selectedRegion]);
 
   return (
     <div className="bg-white rounded-3xl p-6 border border-[#E8E2D5] text-[#121214] space-y-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
@@ -88,6 +104,15 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           {selectedElement && isEnhanceableElement(selectedElement) && activeTab === 'properties' && (
             <button
               onClick={() => onOpenAiEnhance(selectedElement)}
+              className="px-3 py-1 rounded-full bg-[#121214] text-[#C5A059] border border-[#C5A059]/40 text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1 hover:bg-[#C5A059] hover:text-white transition-colors"
+            >
+              <Wand2 className="w-3 h-3" />
+              <span>Enhance</span>
+            </button>
+          )}
+          {selectedRegion && !selectedElement && activeTab === 'properties' && (
+            <button
+              onClick={() => onEnhanceRegion(selectedRegion)}
               className="px-3 py-1 rounded-full bg-[#121214] text-[#C5A059] border border-[#C5A059]/40 text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1 hover:bg-[#C5A059] hover:text-white transition-colors"
             >
               <Wand2 className="w-3 h-3" />
@@ -164,7 +189,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       )}
 
       {/* Tab Content: Empty State when No Layer Selected under Properties Tab */}
-      {activeTab === 'properties' && !selectedElement && (
+      {activeTab === 'properties' && !selectedElement && !selectedRegion && (
         <div className="py-12 text-center text-xs text-[#8A857C] space-y-2.5 bg-[#FAF8F5] rounded-2xl border border-dashed border-[#E8E2D5] p-6">
           <div className="w-10 h-10 rounded-full bg-white border border-[#E8E2D5] flex items-center justify-center mx-auto text-[#C5A059] shadow-2xs">
             <Sliders className="w-5 h-5" />
@@ -172,8 +197,49 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <div>
             <p className="font-bold text-[#121214] text-sm">No Layer Selected</p>
             <p className="text-[#6E6A63] text-xs mt-1">
-              Click an element on the canvas or pick a layer from the Layers tab to customize its scale, rotation, thickness, or text.
+              Click a layer to edit it, or drag on empty canvas to select a portion.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Tab Content: Canvas region selection */}
+      {activeTab === 'properties' && selectedRegion && !selectedElement && (
+        <div className="space-y-5 text-xs">
+          <div className="pb-3 border-b border-[#E8E2D5]">
+            <span className="text-[10px] font-mono text-[#C5A059] uppercase tracking-widest font-bold flex items-center gap-1.5">
+              <Scan className="w-3.5 h-3.5" />
+              Canvas Region
+            </span>
+            <h3 className="font-serif font-bold text-lg text-[#121214] mt-0.5">Selected portion</h3>
+            <p className="text-[#6E6A63] text-[11px] mt-1 leading-relaxed">
+              {Math.round(selectedRegion.width)}% × {Math.round(selectedRegion.height)}% of the engraving area
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2">
+            <button
+              onClick={() => onEnhanceRegion(selectedRegion)}
+              className="w-full py-3 rounded-full bg-[#121214] text-white hover:bg-[#C5A059] font-bold uppercase tracking-widest text-[10px] flex items-center justify-center space-x-2 transition-colors"
+            >
+              <Wand2 className="w-4 h-4 text-[#C5A059]" />
+              <span>Enhance this region</span>
+            </button>
+
+            <button
+              onClick={() => onExtractRegion(selectedRegion)}
+              className="w-full py-3 rounded-full bg-[#FAF8F5] text-[#121214] border border-[#E8E2D5] hover:border-[#C5A059] font-bold uppercase tracking-widest text-[10px] flex items-center justify-center space-x-2 transition-colors"
+            >
+              <Plus className="w-4 h-4 text-[#C5A059]" />
+              <span>Add as new layer</span>
+            </button>
+
+            <button
+              onClick={onClearRegion}
+              className="w-full py-3 rounded-full bg-white text-[#6E6A63] border border-[#E8E2D5] hover:border-[#C5A059] font-bold uppercase tracking-widest text-[10px] transition-colors"
+            >
+              Clear selection
+            </button>
           </div>
         </div>
       )}

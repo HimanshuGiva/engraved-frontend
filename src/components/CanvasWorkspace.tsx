@@ -1,15 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CanvasElement, JewelryItem } from '../types';
+import { CanvasElement, CanvasRegion, JewelryItem } from '../types';
 import { ToolMode } from './Toolbar';
 import { pointsToSvgPath, buildEraserMaskDataUri, buildFreehandSessionData } from '../utils/svgUtils';
+import { normalizeCanvasRegion } from '../utils/canvasCapture';
 import { Sparkles, Pencil, Upload } from 'lucide-react';
 
 interface CanvasWorkspaceProps {
   jewelry: JewelryItem;
   elements: CanvasElement[];
   selectedElementId: string | null;
+  selectedRegion: CanvasRegion | null;
   activeTool: ToolMode;
   onSelectElement: (id: string | null) => void;
+  onRegionSelect: (region: CanvasRegion | null) => void;
   onUpdateElement: (updated: CanvasElement, select?: boolean) => void;
   onAddElement: (element: CanvasElement, select?: boolean) => void;
   onSelectTool?: (tool: ToolMode) => void;
@@ -50,8 +53,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   jewelry,
   elements,
   selectedElementId,
+  selectedRegion,
   activeTool,
   onSelectElement,
+  onRegionSelect,
   onUpdateElement,
   onAddElement,
   onSelectTool,
@@ -139,6 +144,36 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const [eraseTargetId, setEraseTargetId] = useState<string | null>(null);
   const [eraseLocalPoints, setEraseLocalPoints] = useState<{ x: number; y: number }[]>([]);
 
+  // Region marquee selection
+  const [isSelectingRegion, setIsSelectingRegion] = useState(false);
+  const [regionAnchor, setRegionAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [regionCursor, setRegionCursor] = useState<{ x: number; y: number } | null>(null);
+
+  const pointerToCanvasPercent = (clientX: number, clientY: number) => {
+    const container = containerRef.current;
+    if (!container) return null;
+    const rect = container.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100)),
+      y: Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100)),
+    };
+  };
+
+  const liveRegion =
+    isSelectingRegion && regionAnchor && regionCursor
+      ? normalizeCanvasRegion(regionAnchor.x, regionAnchor.y, regionCursor.x, regionCursor.y)
+      : null;
+  const displayedRegion = liveRegion ?? selectedRegion;
+
+  useEffect(() => {
+    if (activeTool !== 'select') {
+      setIsSelectingRegion(false);
+      setRegionAnchor(null);
+      setRegionCursor(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool]);
+
   // Dragging & Transform state
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -185,6 +220,21 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
 
   // Freehand Drawing pointer events
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activeTool === 'select' && e.target === containerRef.current) {
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {}
+
+      const point = pointerToCanvasPercent(e.clientX, e.clientY);
+      if (!point) return;
+
+      onSelectElement(null);
+      setIsSelectingRegion(true);
+      setRegionAnchor(point);
+      setRegionCursor(point);
+      return;
+    }
+
     if (activeTool === 'draw') {
       try {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -229,15 +279,16 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
 
       setEraseTargetId(target.id);
       setEraseLocalPoints([toLocalPercent(xPct, yPct, target)]);
-    } else {
-      // Only deselect if pointer down occurred directly on the background canvas itself
-      if (e.target === containerRef.current) {
-        onSelectElement(null);
-      }
     }
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activeTool === 'select' && isSelectingRegion) {
+      const point = pointerToCanvasPercent(e.clientX, e.clientY);
+      if (point) setRegionCursor(point);
+      return;
+    }
+
     if (activeTool === 'draw' && isDrawingFreehand) {
       const container = containerRef.current;
       if (!container) return;
@@ -304,7 +355,18 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       setCurrentDrawPoints([...drawPointsRef.current]);
     }
 
-    if (activeTool === 'draw' && isDrawingFreehand) {
+    if (activeTool === 'select' && isSelectingRegion && regionAnchor && regionCursor) {
+      const region = normalizeCanvasRegion(
+        regionAnchor.x,
+        regionAnchor.y,
+        regionCursor.x,
+        regionCursor.y
+      );
+      onRegionSelect(region);
+      setIsSelectingRegion(false);
+      setRegionAnchor(null);
+      setRegionCursor(null);
+    } else if (activeTool === 'draw' && isDrawingFreehand) {
       setIsDrawingFreehand(false);
       if (currentDrawPoints.length > 1) {
         // Add this stroke to the current session (all strokes drawn since
@@ -394,20 +456,31 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   };
 
   const handlePointerCancel = () => {
+    if (isSelectingRegion) {
+      setIsSelectingRegion(false);
+      setRegionAnchor(null);
+      setRegionCursor(null);
+      return;
+    }
     if (activeTool === 'draw' || activeTool === 'erase') {
       handlePointerUp();
     }
   };
 
   const handleLostPointerCapture = () => {
+    if (isSelectingRegion) {
+      handlePointerUp();
+      return;
+    }
     if (activeTool === 'draw' || activeTool === 'erase') {
       handlePointerUp();
     }
   };
 
   const startDragging = (e: React.PointerEvent | React.MouseEvent, el: CanvasElement) => {
-    if (activeTool === 'draw' || activeTool === 'erase') return;
+    if (activeTool !== 'select') return;
     e.stopPropagation();
+    onRegionSelect(null);
     onSelectElement(el.id);
 
     const container = containerRef.current;
@@ -461,7 +534,9 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerCancel}
             onLostPointerCapture={handleLostPointerCapture}
-            className={`relative bg-[#FAF8F5] border-2 border-[#E8E2D5] shadow-inner overflow-hidden select-none cursor-crosshair touch-none transition-all flex-shrink-0 ${getShapeStyle()}`}
+            className={`relative bg-[#FAF8F5] border-2 border-[#E8E2D5] shadow-inner overflow-hidden select-none touch-none transition-all flex-shrink-0 ${
+              activeTool === 'draw' || activeTool === 'erase' ? 'cursor-crosshair' : 'cursor-default'
+            } ${getShapeStyle()}`}
           >
 
 
@@ -667,6 +742,24 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                 </div>
               );
             })}
+
+            {/* Region selection overlay */}
+            {displayedRegion && (
+              <div
+                className="absolute z-40 pointer-events-none border-2 border-[#C5A059] bg-[#C5A059]/10"
+                style={{
+                  left: `${displayedRegion.left}%`,
+                  top: `${displayedRegion.top}%`,
+                  width: `${displayedRegion.width}%`,
+                  height: `${displayedRegion.height}%`,
+                }}
+              >
+                <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-[#C5A059] rounded-full" />
+                <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-[#C5A059] rounded-full" />
+                <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-[#C5A059] rounded-full" />
+                <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-[#C5A059] rounded-full" />
+              </div>
+            )}
 
             {/* Live Freehand Drawing Overlay */}
             {isDrawingFreehand && currentDrawPoints.length > 1 && (
