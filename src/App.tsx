@@ -301,10 +301,7 @@ export default function App() {
       {/* Main Content Router */}
       <main className="flex-1 flex flex-col">
         {currentStep === 'select' && (
-          <JewelrySelector
-            onSelectJewelry={handleSelectJewelry}
-            selectedItem={selectedJewelry}
-          />
+          <JewelrySelector onSelectJewelry={handleSelectJewelry} />
         )}
 
         {currentStep === 'studio' && selectedJewelry && (
