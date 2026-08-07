@@ -4,14 +4,12 @@ import { ValidationIssue } from '../types';
 
 interface ValidationBannerProps {
   issues: ValidationIssue[];
-  onAutoFix: () => void;
   fixedMessage?: string | null;
   onUndoFix?: () => void;
 }
 
 export const ValidationBanner: React.FC<ValidationBannerProps> = ({
   issues,
-  onAutoFix,
   fixedMessage,
   onUndoFix,
 }) => {
@@ -54,15 +52,6 @@ export const ValidationBanner: React.FC<ValidationBannerProps> = ({
         </div>
       </div>
 
-      {primaryIssue.canAutoFix && (
-        <button
-          onClick={onAutoFix}
-          className="px-4 py-2 rounded-full bg-[#121214] text-white hover:bg-[#C5A059] font-bold uppercase tracking-widest text-[10px] flex items-center space-x-1.5 shadow-2xs transition-colors border border-[#121214]"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-[#C5A059]" />
-          <span>Fix automatically</span>
-        </button>
-      )}
     </div>
   );
 };
