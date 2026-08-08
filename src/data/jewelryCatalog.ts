@@ -4,6 +4,7 @@ export const JEWELRY_CATALOG: JewelryItem[] = [
   {
     id: 'plain-silver-bar-pendant',
     sku: 'GIVA-PND-BAR-SLV',
+    backendSkuCode: 'P1',
     name: 'Plain Silver Bar Pendant',
     type: 'pendant',
     material: 'silver',
@@ -26,6 +27,7 @@ export const JEWELRY_CATALOG: JewelryItem[] = [
   {
     id: 'plain-gold-circular-pendant',
     sku: 'GIVA-PND-RND-GLD',
+    backendSkuCode: 'P2',
     name: 'Plain Gold Circular Pendant',
     type: 'pendant',
     material: '18k_gold',
@@ -48,6 +50,7 @@ export const JEWELRY_CATALOG: JewelryItem[] = [
   {
     id: 'plain-squircle-pendant',
     sku: 'GIVA-PND-SQR-SLV',
+    backendSkuCode: 'P3',
     name: 'Plain Squircle Pendant',
     type: 'pendant',
     material: 'silver',

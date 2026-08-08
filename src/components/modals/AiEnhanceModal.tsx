@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Sparkles, Wand2, ArrowRight, RefreshCw } from 'lucide-react';
-import { CanvasElement, CanvasRegion } from '../types';
-import { fetchAiEnhance, EnhanceMode } from '../services/aiService';
+import { CanvasElement, CanvasRegion } from '../../types';
+import { fetchAiEnhance, EnhanceMode } from '../../services/aiService';
 import {
   captureElementAsPngDataUrl,
   captureRegionAsPngDataUrl,
   defaultEnhanceMode,
-} from '../utils/canvasCapture';
+} from '../../utils/canvasCapture';
 
 interface AiEnhanceModalProps {
   isOpen: boolean;

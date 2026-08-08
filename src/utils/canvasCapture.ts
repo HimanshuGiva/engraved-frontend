@@ -207,6 +207,41 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+/** Rasterize inline SVG to PNG for API calls (enhance expects raster input — not vectorization). */
+export async function rasterizeSvgMarkupToPng(svgMarkup: string, size = CAPTURE_SIZE): Promise<string> {
+  const normalized = svgMarkup.trim().startsWith('<svg')
+    ? svgMarkup
+    : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${svgMarkup}</svg>`;
+  const blob = new Blob([normalized], { type: 'image/svg+xml;charset=utf-8' });
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const img = await loadImage(objectUrl);
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Canvas not available');
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size, size);
+    ctx.drawImage(img, 0, 0, size, size);
+    return canvas.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/** Read a File/Blob as a data URL (for raster uploads sent to backend enhance). */
+export function readFileAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export const ENHANCEABLE_TYPES: CanvasElement['type'][] = [
   'svg_ai',
   'freehand_draw',

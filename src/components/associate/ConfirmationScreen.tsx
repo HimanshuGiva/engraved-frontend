@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import confetti from 'canvas-confetti';
-import { SavedDesignBundle } from '../types';
-import { downloadFile } from '../utils/svgUtils';
+import { SavedDesignBundle } from '../../types';
+import { downloadFile } from '../../utils/svgUtils';
 import { Download, Store, CheckCircle } from 'lucide-react';
 
 interface ConfirmationScreenProps {
@@ -60,8 +60,8 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
         
         <div className="flex flex-wrap items-center justify-between gap-6 border-b border-[#E8E2D5] pb-6">
           <div>
-            <span className="text-xs font-mono text-[#C5A059] uppercase tracking-widest font-bold">Unique Design Identifier</span>
-            <div className="font-mono text-3xl sm:text-4xl font-extrabold text-[#121214] tracking-wider mt-1">
+            <span className="text-xs font-mono text-[#C5A059] uppercase tracking-widest font-bold">Order ID</span>
+            <div className="font-mono text-lg sm:text-xl font-extrabold text-[#121214] tracking-wider mt-1 break-all">
               {bundle.designId}
             </div>
             <p className="text-[#6E6A63] text-xs mt-1">Created on {new Date(bundle.createdAt).toLocaleDateString()} • GIVA Atelier</p>

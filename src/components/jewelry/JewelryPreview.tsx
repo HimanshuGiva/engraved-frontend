@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { JewelryItem, CanvasElement } from '../types';
-import { generateCompositeSvg } from '../utils/svgUtils';
+import { JewelryItem, CanvasElement } from '../../types';
+import { generateCompositeSvg } from '../../utils/svgUtils';
 import { Sparkles, ArrowLeft, Check, ZoomIn, RotateCw, ShieldCheck } from 'lucide-react';
 
 interface JewelryPreviewProps {
   jewelry: JewelryItem;
   elements: CanvasElement[];
   onBackToEdit: () => void;
-  onConfirmDesign: () => void;
+  onConfirmDesign: () => Promise<void>;
 }
 
 export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
@@ -18,6 +18,8 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
 }) => {
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [lightingAngle, setLightingAngle] = useState<number>(45);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const compositeSvg = generateCompositeSvg(elements, jewelry);
 
@@ -228,12 +230,28 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
           </div>
 
           {/* Confirm CTA */}
+          {confirmError && (
+            <p className="text-xs text-red-600 font-medium bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+              {confirmError}
+            </p>
+          )}
           <button
-            onClick={onConfirmDesign}
-            className="w-full py-4 rounded-full bg-[#121214] text-white hover:bg-[#C5A059] transition-all font-bold uppercase tracking-[0.2em] text-xs shadow-md flex items-center justify-center space-x-2 border border-[#121214]"
+            onClick={async () => {
+              setIsConfirming(true);
+              setConfirmError(null);
+              try {
+                await onConfirmDesign();
+              } catch (e) {
+                setConfirmError(e instanceof Error ? e.message : 'Failed to submit order');
+              } finally {
+                setIsConfirming(false);
+              }
+            }}
+            disabled={isConfirming}
+            className="w-full py-4 rounded-full bg-[#121214] text-white hover:bg-[#C5A059] transition-all font-bold uppercase tracking-[0.2em] text-xs shadow-md flex items-center justify-center space-x-2 border border-[#121214] disabled:opacity-50"
           >
             <Check className="w-5 h-5 text-[#C5A059] group-hover:text-white" />
-            <span>Confirm & Generate Design ID</span>
+            <span>{isConfirming ? 'Submitting order...' : 'Confirm & Submit Order'}</span>
           </button>
 
           <div className="flex items-center justify-center space-x-2 text-[11px] text-[#6E6A63]">

@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { SavedDesignBundle } from '../types';
+import { SavedDesignBundle } from '../../types';
+import { getAppOrder } from '../../services/orderService';
+import { ApiError } from '../../services/apiClient';
+import { bundleFromOrder } from '../../utils/designBundle';
 import { QrCode, Printer, CheckCircle, Cpu } from 'lucide-react';
 
 interface StoreAssociateDrawerProps {
@@ -29,14 +32,20 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
     setDispatchedSuccess(false);
 
     try {
-      const res = await fetch(`/api/designs/${searchId.trim().toUpperCase()}`);
-      if (!res.ok) {
-        throw new Error('Design ID not found in system');
+      const order = await getAppOrder(searchId.trim());
+      const bundle = bundleFromOrder(order);
+      if (!bundle) {
+        throw new Error(`Unknown SKU "${order.sku_code}" in order`);
       }
-      const data = await res.json();
-      setFetchedBundle(data);
-    } catch (err: any) {
-      setSearchError(err.message || 'Failed to locate design');
+      setFetchedBundle(bundle);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Failed to locate order';
+      setSearchError(message);
       setFetchedBundle(null);
     } finally {
       setIsSearching(false);
@@ -56,9 +65,8 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-[#121214]/60 backdrop-blur-xs flex justify-end">
       <div className="bg-white border-l border-[#E8E2D5] text-[#121214] max-w-xl w-full h-full p-6 overflow-y-auto space-y-6 shadow-2xl flex flex-col justify-between animate-in slide-in-from-right duration-300">
-        
+
         <div className="space-y-6">
-          {/* Header */}
           <div className="flex items-center justify-between border-b border-[#E8E2D5] pb-4">
             <div className="flex items-center space-x-2.5">
               <div className="w-8 h-8 rounded-full bg-[#FAF8F5] border border-[#E8E2D5] text-[#C5A059] flex items-center justify-center font-bold">
@@ -78,16 +86,15 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
             </button>
           </div>
 
-          {/* Design ID Search Input */}
           <div className="space-y-2">
-            <label className="text-[10px] font-mono text-[#8A857C] font-bold uppercase tracking-wider">Lookup Customer Design ID</label>
+            <label className="text-[10px] font-mono text-[#8A857C] font-bold uppercase tracking-wider">Lookup order ID</label>
             <div className="flex space-x-2">
               <input
                 type="text"
                 value={searchId}
                 onChange={(e) => setSearchId(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleLookupDesign()}
-                placeholder="e.g. GV-LIVE-10482"
+                placeholder="Paste order UUID from confirmation"
                 className="flex-1 bg-[#FAF8F5] border border-[#E8E2D5] rounded-xl px-4 py-2.5 text-xs text-[#121214] placeholder-gray-400 font-mono focus:border-[#C5A059] focus:outline-none"
               />
               <button
@@ -101,14 +108,13 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
             {searchError && <p className="text-rose-600 text-xs font-medium">{searchError}</p>}
           </div>
 
-          {/* Bundle Information Panel */}
           {displayBundle ? (
             <div className="space-y-5 bg-[#FAF8F5] p-5 rounded-2xl border border-[#E8E2D5] text-xs">
-              
+
               <div className="flex items-center justify-between border-b border-[#E8E2D5] pb-3.5">
                 <div>
                   <span className="text-[10px] text-[#C5A059] font-mono font-bold uppercase tracking-wider">STATUS: CONFIRMED</span>
-                  <div className="font-mono text-xl font-bold text-[#121214]">{displayBundle.designId}</div>
+                  <div className="font-mono text-sm font-bold text-[#121214] break-all">{displayBundle.designId}</div>
                 </div>
 
                 <div className="text-right">
@@ -117,7 +123,6 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Technical Laser Parameters Audit */}
               <div className="space-y-2">
                 <div className="text-[#8A857C] font-bold uppercase text-[10px] tracking-wider flex items-center space-x-1.5">
                   <Cpu className="w-4 h-4 text-[#C5A059]" />
@@ -130,8 +135,8 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
                     <p className="font-bold text-[#121214] capitalize">{displayBundle.jewelry.material.replace('_', ' ')}</p>
                   </div>
                   <div>
-                    <span className="text-[#6E6A63] font-medium">Laser Power Setting:</span>
-                    <p className="font-bold text-[#C5A059]">35W Fiber Laser (1064nm)</p>
+                    <span className="text-[#6E6A63] font-medium">Backend SKU:</span>
+                    <p className="font-bold text-[#C5A059] font-mono">{displayBundle.jewelry.backendSkuCode}</p>
                   </div>
                   <div>
                     <span className="text-[#6E6A63] font-medium">Safe Boundary Width:</span>
@@ -144,7 +149,6 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
                 </div>
               </div>
 
-              {/* Vector Composite Preview */}
               <div className="space-y-2">
                 <div className="text-[#8A857C] font-bold uppercase text-[10px] tracking-wider">Production SVG Vector Beam Path</div>
                 <div
@@ -153,7 +157,6 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
                 />
               </div>
 
-              {/* Dispatch Status Alert */}
               {dispatchedSuccess ? (
                 <div className="p-4 bg-white border border-[#E8E2D5] rounded-xl text-[#121214] flex items-center space-x-3">
                   <CheckCircle className="w-5 h-5 text-[#C5A059] flex-shrink-0" />
@@ -176,13 +179,12 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
             </div>
           ) : (
             <div className="py-12 text-center text-xs text-[#8A857C] bg-[#FAF8F5] rounded-2xl border border-dashed border-[#E8E2D5] p-6 space-y-2">
-              <p>Scan customer QR code or enter Design ID above to inspect laser parameters.</p>
+              <p>Enter the order ID from the customer confirmation screen to inspect laser parameters.</p>
             </div>
           )}
 
         </div>
 
-        {/* Footer */}
         <div className="pt-4 border-t border-[#E8E2D5] text-[11px] text-[#8A857C] flex items-center justify-between">
           <span>GIVA In-Store Terminal v2.4</span>
           <span className="text-[#C5A059] font-bold flex items-center space-x-1.5">
@@ -195,4 +197,3 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
     </div>
   );
 };
-

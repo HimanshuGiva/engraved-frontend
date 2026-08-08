@@ -1,12 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { QrCode, Upload, ArrowRight, RefreshCw, Type, Image as ImageIcon, Video } from 'lucide-react';
-import { MessageContentType } from '../types';
+import { MessageContentType } from '../../types';
+import { getUploadConstraints } from '../../services/catalogService';
 import {
   createGiftMessage,
   createGiftMessageWithMedia,
   qrSvgToPreviewUrl,
   resolveQrSvgContent,
-} from '../services/messageService';
+} from '../../services/messageService';
+import {
+  allowedTypesLabel,
+  defaultUploadConstraints,
+  formatFileSize,
+  photoAcceptString,
+  UploadConstraints,
+  validateMessageUpload,
+  videoAcceptString,
+} from '../../utils/uploadConstraints';
 
 interface GiftQrModalProps {
   isOpen: boolean;
@@ -21,9 +31,6 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'photo', label: 'Photo', icon: ImageIcon },
   { id: 'video', label: 'Video', icon: Video },
 ];
-
-const PHOTO_ACCEPT = 'image/png,image/jpeg,image/webp';
-const VIDEO_ACCEPT = 'video/mp4,video/quicktime';
 
 export const GiftQrModal: React.FC<GiftQrModalProps> = ({
   isOpen,
@@ -41,8 +48,17 @@ export const GiftQrModal: React.FC<GiftQrModalProps> = ({
   const [qrSvgContent, setQrSvgContent] = useState<string | null>(null);
   const [messageId, setMessageId] = useState<string | null>(null);
   const [viewUrl, setViewUrl] = useState<string | null>(null);
+  const [uploadConstraints, setUploadConstraints] = useState<UploadConstraints>(defaultUploadConstraints());
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    getUploadConstraints()
+      .then(setUploadConstraints)
+      .catch(() => setUploadConstraints(defaultUploadConstraints()));
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -74,6 +90,21 @@ export const GiftQrModal: React.FC<GiftQrModalProps> = ({
     if (filePreviewUrl?.startsWith('blob:')) {
       URL.revokeObjectURL(filePreviewUrl);
     }
+
+    if (file && activeTab !== 'text') {
+      const validationError = validateMessageUpload(file, activeTab, uploadConstraints);
+      if (validationError) {
+        setErrorMessage(validationError);
+        setSelectedFile(null);
+        setFilePreviewUrl(null);
+        setQrPreviewUrl(null);
+        setQrSvgContent(null);
+        setMessageId(null);
+        setViewUrl(null);
+        return;
+      }
+    }
+
     setSelectedFile(file);
     setFilePreviewUrl(file ? URL.createObjectURL(file) : null);
     setQrPreviewUrl(null);
@@ -106,6 +137,10 @@ export const GiftQrModal: React.FC<GiftQrModalProps> = ({
         if (!selectedFile) {
           throw new Error(`Choose a ${activeTab} file to upload`);
         }
+        const validationError = validateMessageUpload(selectedFile, activeTab, uploadConstraints);
+        if (validationError) {
+          throw new Error(validationError);
+        }
         message = await createGiftMessageWithMedia(activeTab, selectedFile, caption);
       }
 
@@ -126,7 +161,18 @@ export const GiftQrModal: React.FC<GiftQrModalProps> = ({
   };
 
   const accept =
-    activeTab === 'photo' ? PHOTO_ACCEPT : activeTab === 'video' ? VIDEO_ACCEPT : undefined;
+    activeTab === 'photo'
+      ? photoAcceptString(uploadConstraints.content_types)
+      : activeTab === 'video'
+        ? videoAcceptString()
+        : undefined;
+
+  const uploadHint =
+    activeTab === 'photo'
+      ? `${allowedTypesLabel('photo', uploadConstraints.content_types)} · max ${formatFileSize(uploadConstraints.max_bytes)}`
+      : activeTab === 'video'
+        ? `${allowedTypesLabel('video', uploadConstraints.content_types)} · max ${formatFileSize(uploadConstraints.max_bytes)}`
+        : '';
 
   return (
     <div className="fixed inset-0 z-50 bg-[#121214]/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -206,9 +252,7 @@ export const GiftQrModal: React.FC<GiftQrModalProps> = ({
               <span className="text-xs font-bold uppercase tracking-wider text-[#121214]">
                 {selectedFile ? selectedFile.name : `Upload ${activeTab}`}
               </span>
-              <span className="text-[10px] text-[#8A857C]">
-                {activeTab === 'photo' ? 'PNG, JPEG, or WebP' : 'MP4 or MOV'}
-              </span>
+              <span className="text-[10px] text-[#8A857C]">{uploadHint}</span>
             </button>
 
             {filePreviewUrl && activeTab === 'photo' && (
