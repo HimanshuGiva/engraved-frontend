@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { JewelryItem, JewelryMaterial } from '../types';
-import { JEWELRY_CATALOG } from '../data/jewelryCatalog';
+import { JewelryItem, JewelryMaterial } from '../../types';
+import { JEWELRY_CATALOG } from '../../data/jewelryCatalog';
 import { Sparkles, Ruler, ArrowRight } from 'lucide-react';
 
 interface JewelrySelectorProps {

@@ -1,28 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Type, Check, Sparkles } from 'lucide-react';
+import { FONT_OPTIONS, TEXT_SUGGESTIONS } from '../../constants/fonts';
 
 interface TextModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddText: (text: string, fontFamily: string) => void;
 }
-
-const FONT_OPTIONS = [
-  { id: 'serif', name: 'Playfair (Classy Serif)', fontClass: 'font-serif' },
-  { id: 'sans', name: 'Jakarta (Modern Sans)', fontClass: 'font-sans' },
-  { id: 'script', name: 'Script (Romantic Cursive)', fontClass: 'italic font-serif' },
-  { id: 'mono', name: 'Monospace (Tech Precision)', fontClass: 'font-mono' },
-];
-
-const SUGGESTIONS = [
-  'Forever & Always',
-  'A ❤ M',
-  '20.10.2024',
-  'Blessed',
-  'GIVA Silver',
-  'My Love',
-  'Hope & Faith',
-];
 
 export const TextModal: React.FC<TextModalProps> = ({ isOpen, onClose, onAddText }) => {
   const [textInput, setTextInput] = useState('Forever');
@@ -92,7 +76,7 @@ export const TextModal: React.FC<TextModalProps> = ({ isOpen, onClose, onAddText
               <span>Popular Ideas</span>
             </span>
             <div className="flex flex-wrap gap-1.5">
-              {SUGGESTIONS.map((sug) => (
+              {TEXT_SUGGESTIONS.map((sug) => (
                 <button
                   key={sug}
                   type="button"

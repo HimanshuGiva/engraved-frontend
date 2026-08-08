@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CanvasElement, CanvasRegion, JewelryItem, isErasableLayer } from '../types';
-import { ToolMode } from './Toolbar';
-import { pointsToSvgPath, buildEraserMaskDataUri, buildFreehandSessionData, eraserStrokesFromElements, EraserStroke, canvasPointsToLocalSubpaths, subpathsToSvgPath } from '../utils/svgUtils';
-import { normalizeCanvasRegion } from '../utils/canvasCapture';
+import { CanvasElement, CanvasRegion, JewelryItem, isErasableLayer } from '../../types';
+import { ToolMode } from '../../constants/tools';
+import { getFontClass } from '../../constants/fonts';
+import { pointsToSvgPath, buildEraserMaskDataUri, buildFreehandSessionData, eraserStrokesFromElements, EraserStroke, canvasPointsToLocalSubpaths, subpathsToSvgPath } from '../../utils/svgUtils';
+import { normalizeCanvasRegion } from '../../utils/canvasCapture';
 import { Sparkles, Pencil, Upload } from 'lucide-react';
 
 interface CanvasWorkspaceProps {
@@ -551,16 +552,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       x: mouseXPct - el.x,
       y: mouseYPct - el.y,
     });
-  };
-
-  const getFontClass = (fontId?: string) => {
-    switch (fontId) {
-      case 'sans': return 'font-sans';
-      case 'script': return 'font-serif italic';
-      case 'mono': return 'font-mono';
-      case 'serif':
-      default: return 'font-serif';
-    }
   };
 
   return (

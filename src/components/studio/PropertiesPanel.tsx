@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CanvasElement, CanvasRegion, visibleLayers } from '../types';
+import { CanvasElement, CanvasRegion, visibleLayers } from '../../types';
 import {
   Sparkles,
   RotateCw,
@@ -15,7 +15,7 @@ import {
   Scan,
   Plus,
 } from 'lucide-react';
-import { isEnhanceableElement } from '../utils/canvasCapture';
+import { isEnhanceableElement } from '../../utils/canvasCapture';
 
 interface PropertiesPanelProps {
   selectedElement: CanvasElement | null;

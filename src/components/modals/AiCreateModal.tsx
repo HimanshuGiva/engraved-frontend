@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Mic, MicOff, RefreshCw, ArrowRight } from 'lucide-react';
-import { AiOption, JewelryItem } from '../types';
-import { fetchAiEngravingOptions, fetchAiRefineOptions } from '../services/aiService';
+import { AiOption, JewelryItem } from '../../types';
+import { fetchAiEngravingOptions, fetchAiRefineOptions } from '../../services/aiService';
 
 interface AiCreateModalProps {
   isOpen: boolean;
@@ -118,7 +118,9 @@ export const AiCreateModal: React.FC<AiCreateModalProps> = ({
               {refiningSvg ? 'How would you like to refine this artwork?' : 'What do you want to create?'}
             </h2>
             <p className="text-[#6E6A63] text-xs mt-1">
-              AI generates <strong>two distinct vector options</strong> optimized for physical laser engraving.
+              {refiningSvg
+                ? 'The server enhances your selection and returns one engraving-ready vector.'
+                : 'AI generates two distinct vector options optimized for physical laser engraving.'}
             </p>
           </div>
 
@@ -189,7 +191,11 @@ export const AiCreateModal: React.FC<AiCreateModalProps> = ({
         {isLoading ? (
           <div className="py-12 flex flex-col items-center justify-center space-y-3 text-[#6E6A63]">
             <div className="w-10 h-10 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
-            <p className="text-xs font-mono text-[#C5A059] font-bold tracking-wider">Crafting 2 vector engraving options for {jewelry.name}...</p>
+            <p className="text-xs font-mono text-[#C5A059] font-bold tracking-wider">
+              {refiningSvg
+                ? `Refining artwork for ${jewelry.name}...`
+                : `Crafting 2 vector engraving options for ${jewelry.name}...`}
+            </p>
           </div>
         ) : options.length > 0 ? (
           <div className="space-y-4">
@@ -207,7 +213,7 @@ export const AiCreateModal: React.FC<AiCreateModalProps> = ({
                 className="text-xs text-[#C5A059] font-bold uppercase tracking-widest hover:underline flex items-center space-x-1 transition-colors"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>Try 2 more</span>
+                <span>{refiningSvg ? 'Try again' : 'Try 2 more'}</span>
               </button>
             </div>
 

@@ -1,6 +1,6 @@
 import { GiftMessage, MessageContentType } from '../types';
-import { apiFetch, ApiError } from './apiClient';
-import { svgToDataUrl } from './aiService';
+import { svgToDataUrl } from '../utils/svg/dataUrl';
+import { apiFetch, apiFetchText, ApiError } from './apiClient';
 
 interface PresignResponse {
   upload_url: string;
@@ -34,6 +34,11 @@ export async function uploadToPresignedUrl(
   }
 }
 
+/** Public viewer — GET /v1/messages/{short_id} (no auth required). */
+export async function fetchPublicMessage(shortId: string): Promise<GiftMessage> {
+  return apiFetch<GiftMessage>(`/v1/messages/${encodeURIComponent(shortId)}`);
+}
+
 export async function createGiftMessage(input: {
   content_type: MessageContentType;
   content?: string;
@@ -45,18 +50,21 @@ export async function createGiftMessage(input: {
   });
 }
 
-/** Backend may return inline SVG or a public URL to the SVG asset. */
+/** Backend may return inline SVG or a proxied API path/URL to the SVG asset. */
 export async function resolveQrSvgContent(qrSvgUrl: string): Promise<string> {
   const trimmed = qrSvgUrl.trim();
   if (trimmed.startsWith('<svg')) {
     return trimmed;
   }
 
-  const res = await fetch(trimmed);
-  if (!res.ok) {
-    throw new ApiError('Failed to load QR SVG from backend', res.status);
+  try {
+    return await apiFetchText(trimmed);
+  } catch (e) {
+    if (e instanceof ApiError) {
+      throw new ApiError('Failed to load QR SVG from backend', e.status, e.code);
+    }
+    throw e;
   }
-  return res.text();
 }
 
 /** Build a PNG/SVG data URL for reliable `<img>` previews in modals. */

@@ -14,6 +14,8 @@ export interface EngravingConstraints {
 export interface JewelryItem {
   id: string;
   sku: string;
+  /** Backend catalog SKU code (P1, P2, P3) used when submitting orders. */
+  backendSkuCode: string;
   name: string;
   type: JewelryType;
   material: JewelryMaterial;
@@ -81,17 +83,6 @@ export function visibleLayers(elements: CanvasElement[]): CanvasElement[] {
   return elements.filter(isVisibleLayer);
 }
 
-export interface ValidationIssue {
-  id: string;
-  elementId?: string;
-  severity: 'warning' | 'error';
-  title: string;
-  message: string;
-  type: 'thin_lines' | 'out_of_bounds' | 'high_complexity' | 'text_too_small';
-  fixActionLabel: string;
-  canAutoFix: boolean;
-}
-
 export interface AiOption {
   id: string;
   title: string;
@@ -107,7 +98,6 @@ export interface SavedDesignBundle {
   jewelry: JewelryItem;
   elements: CanvasElement[];
   compositeSvg: string;
-  validationPassed: boolean;
   totalPriceInr: number;
   messageId?: string;
 }

@@ -18,17 +18,23 @@ import {
   Star,
   Heart,
 } from 'lucide-react';
+import { ToolMode } from '../../constants/tools';
+import { SHAPE_LABELS } from '../../constants/shapes';
 
-export type ToolMode = 'select' | 'draw' | 'text' | 'shape' | 'erase';
+const SHAPE_ICONS: Record<string, React.ElementType> = {
+  rectangle: Square,
+  circle: Circle,
+  triangle: Triangle,
+  diamond: Diamond,
+  star: Star,
+  heart: Heart,
+};
 
-const SHAPE_OPTIONS: { key: string; label: string; icon: React.ElementType }[] = [
-  { key: 'rectangle', label: 'Rectangle', icon: Square },
-  { key: 'circle', label: 'Circle', icon: Circle },
-  { key: 'triangle', label: 'Triangle', icon: Triangle },
-  { key: 'diamond', label: 'Diamond', icon: Diamond },
-  { key: 'star', label: 'Star', icon: Star },
-  { key: 'heart', label: 'Heart', icon: Heart },
-];
+const SHAPE_OPTIONS = Object.keys(SHAPE_LABELS).map((key) => ({
+  key,
+  label: SHAPE_LABELS[key],
+  icon: SHAPE_ICONS[key],
+}));
 
 interface ToolbarProps {
   activeTool: ToolMode;
