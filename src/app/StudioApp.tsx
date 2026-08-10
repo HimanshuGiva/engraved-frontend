@@ -85,6 +85,7 @@ export default function StudioApp() {
 
   const handleSelectJewelry = (jewelry: JewelryItem) => {
     setSelectedJewelry(jewelry);
+    setActiveTool('draw');
     setCurrentStep('studio');
   };
 
