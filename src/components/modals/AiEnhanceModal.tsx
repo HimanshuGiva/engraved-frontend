@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles, Wand2, ArrowRight, RefreshCw } from 'lucide-react';
+import { Sparkles, Wand2, ArrowRight, RefreshCw, Check } from 'lucide-react';
 import { CanvasElement, CanvasRegion } from '../../types';
-import { fetchAiEnhance, EnhanceMode } from '../../services/aiService';
+import { fetchAiEnhance } from '../../services/aiService';
+import {
+  ENHANCE_OPTIONS,
+  EnhanceOption,
+  defaultEnhanceOptions,
+  toggleEnhanceOption,
+} from '../../constants/enhanceOptions';
 import {
   captureElementAsPngDataUrl,
   captureRegionAsPngDataUrl,
-  defaultEnhanceMode,
 } from '../../utils/canvasCapture';
 
 interface AiEnhanceModalProps {
@@ -30,7 +35,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
   onApply,
 }) => {
   const isRegionMode = Boolean(region);
-  const [mode, setMode] = useState<EnhanceMode>('ai_generated');
+  const [selectedOptions, setSelectedOptions] = useState<EnhanceOption[]>(['stylize']);
   const [prompt, setPrompt] = useState('');
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [resultSvg, setResultSvg] = useState<string | null>(null);
@@ -41,7 +46,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    setMode(element ? defaultEnhanceMode(element) : 'ai_generated');
+    setSelectedOptions(defaultEnhanceOptions(element));
     setPrompt('');
     setResultSvg(null);
     setResultPreviewUrl(null);
@@ -84,6 +89,11 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
   };
 
   const handleEnhance = async () => {
+    if (selectedOptions.length === 0) {
+      setErrorMessage('Select at least one option');
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage(null);
     setResultSvg(null);
@@ -91,7 +101,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
 
     try {
       const imageDataUrl = previewDataUrl ?? (await captureForEnhance());
-      const result = await fetchAiEnhance(imageDataUrl, mode, prompt);
+      const result = await fetchAiEnhance(imageDataUrl, selectedOptions, prompt);
       setResultSvg(result.svgCode);
       setResultPreviewUrl(result.previewUrl);
     } catch (e) {
@@ -109,13 +119,13 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
           <div>
             <div className="inline-flex items-center space-x-1.5 text-xs text-[#C5A059] font-bold uppercase tracking-[0.2em] bg-[#FAF8F5] px-3 py-1 rounded-full border border-[#E8E2D5] mb-2">
               <Wand2 className="w-3.5 h-3.5 text-[#C5A059]" />
-              <span>AI Enhance</span>
+              <span>Enhance</span>
             </div>
             <h2 className="font-serif text-2xl font-bold text-[#121214]">
-              Polish for engraving
+              {label}
             </h2>
             <p className="text-[#6E6A63] text-xs mt-1">
-              Cleans noise and sharpens line art on{' '}
+              Choose an AI style to improve{' '}
               <strong className="text-[#121214]">{label}</strong> for laser engraving.
             </p>
           </div>
@@ -159,37 +169,39 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
         </div>
 
         <div className="space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-[#8A857C]">Enhance mode</label>
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-[#8A857C]">
+              AI style <span className="font-normal normal-case tracking-normal">(select one or both)</span>
+            </label>
             <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setMode('ai_generated')}
-                className={`py-2.5 px-3 rounded-xl text-[11px] font-bold uppercase tracking-wider border transition-all ${
-                  mode === 'ai_generated'
-                    ? 'bg-[#121214] text-[#C5A059] border-[#121214]'
-                    : 'bg-white text-[#6E6A63] border-[#E8E2D5] hover:border-[#C5A059]'
-                }`}
-              >
-                AI / Vector
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('manual')}
-                className={`py-2.5 px-3 rounded-xl text-[11px] font-bold uppercase tracking-wider border transition-all ${
-                  mode === 'manual'
-                    ? 'bg-[#121214] text-[#C5A059] border-[#121214]'
-                    : 'bg-white text-[#6E6A63] border-[#E8E2D5] hover:border-[#C5A059]'
-                }`}
-              >
-                Hand-drawn
-              </button>
+              {ENHANCE_OPTIONS.map((opt) => {
+                const isSelected = selectedOptions.includes(opt.id);
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setSelectedOptions(toggleEnhanceOption(selectedOptions, opt.id))}
+                    className={`py-2.5 px-3 rounded-xl text-left border transition-all ${
+                      isSelected
+                        ? 'bg-[#121214] text-white border-[#121214]'
+                        : 'bg-white text-[#6E6A63] border-[#E8E2D5] hover:border-[#C5A059]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-[11px] font-bold leading-tight">{opt.label}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-[#C5A059] shrink-0" />}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-            <p className="text-[10px] text-[#8A857C] leading-relaxed">
-              {mode === 'manual'
-                ? 'Keeps sketch character — cleans noise and thickens hairlines.'
-                : 'Stylizes into clean, icon-like engraving line art.'}
-            </p>
+            {selectedOptions.length > 0 && (
+              <p className="text-[10px] text-[#8A857C] leading-relaxed">
+                {ENHANCE_OPTIONS.filter((o) => selectedOptions.includes(o.id))
+                  .map((o) => o.description)
+                  .join(' · ')}
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -201,7 +213,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !isLoading && handleEnhance()}
-              placeholder="e.g., Thicker lines, simplify details..."
+              placeholder="e.g., bolder outer lines..."
               className="w-full bg-[#FAF8F5] border border-[#E8E2D5] focus:border-[#C5A059] rounded-xl py-3 px-4 text-sm text-[#121214] placeholder-[#A39E93] focus:outline-none focus:ring-1 focus:ring-[#C5A059]"
             />
           </div>
@@ -217,7 +229,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
           {!resultSvg ? (
             <button
               onClick={handleEnhance}
-              disabled={isLoading || !previewDataUrl}
+              disabled={isLoading || !previewDataUrl || selectedOptions.length === 0}
               className="flex-1 py-3.5 rounded-full bg-[#121214] text-white hover:bg-[#C5A059] font-bold uppercase tracking-widest text-[10px] flex items-center justify-center space-x-2 disabled:opacity-40 transition-colors"
             >
               {isLoading ? (
@@ -236,7 +248,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
             <>
               <button
                 onClick={handleEnhance}
-                disabled={isLoading}
+                disabled={isLoading || selectedOptions.length === 0}
                 className="py-3.5 px-4 rounded-full bg-[#FAF8F5] text-[#121214] border border-[#E8E2D5] hover:border-[#C5A059] font-bold uppercase tracking-widest text-[10px] flex items-center justify-center space-x-1.5 transition-colors"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-[#C5A059]" />

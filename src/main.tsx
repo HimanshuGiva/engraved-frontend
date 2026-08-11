@@ -1,14 +1,23 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { AssociateTerminal } from './pages/AssociateTerminal.tsx';
 import { GiftMessageViewer } from './pages/GiftMessageViewer.tsx';
-import { parseGiftMessageShortId } from './utils/routing.ts';
+import { isAssociateTerminalPath, parseGiftMessageShortId } from './utils/routing.ts';
 import './index.css';
 
-const shortId = parseGiftMessageShortId(window.location.pathname);
+const { pathname, search } = window.location;
+const giftShortId = parseGiftMessageShortId(pathname);
+const isAssociateTerminal = isAssociateTerminalPath(pathname);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {shortId ? <GiftMessageViewer shortId={shortId} /> : <App />}
+    {giftShortId ? (
+      <GiftMessageViewer shortId={giftShortId} />
+    ) : isAssociateTerminal ? (
+      <AssociateTerminal key={search} />
+    ) : (
+      <App />
+    )}
   </StrictMode>
 );

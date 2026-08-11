@@ -22,6 +22,7 @@ interface CanvasWorkspaceProps {
   onOpenAiModal: () => void;
   onOpenUploadModal: () => void;
   eraserSize?: number;
+  drawSize?: number;
 }
 
 /**
@@ -91,6 +92,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   onOpenAiModal,
   onOpenUploadModal,
   eraserSize = 6,
+  drawSize = 2,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
@@ -150,13 +152,21 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       clearPendingDrawSelection();
       endDrawSession();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool]);
 
-  // If the session's element was changed out from under us (an Undo/Redo
-  // reverted its content, or Clear Canvas removed it), stop trying to
-  // append to it — starting a fresh layer on the next stroke is the least
-  // surprising outcome and avoids corrupting the undo stack.
+  const prevDrawSizeRef = useRef(drawSize);
+  useEffect(() => {
+    if (
+      activeTool === 'draw' &&
+      drawSessionElementId !== null &&
+      prevDrawSizeRef.current !== drawSize
+    ) {
+      endDrawSession();
+    }
+    prevDrawSizeRef.current = drawSize;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawSize, activeTool, drawSessionElementId]);
+
   useEffect(() => {
     if (!drawSessionElementId) return;
     const el = elements.find((e) => e.id === drawSessionElementId);
@@ -173,8 +183,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool]);
 
-  // Eraser records one canvas-space stroke and slices it into every layer the
-  // stroke actually crosses so a single drag can erase across overlapping art.
   const [isErasing, setIsErasing] = useState(false);
   const [eraseCanvasPoints, setEraseCanvasPoints] = useState<{ x: number; y: number }[]>([]);
 
@@ -208,8 +216,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool]);
 
-  // Dragging & Transform state — position preview stays local until
-  // pointer-up so one undo step covers the whole move, not every pixel.
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
@@ -455,6 +461,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                 y: merged.y,
                 width: merged.width,
                 height: merged.height,
+                strokeWidth: drawSize,
               };
               lastCommittedSessionContentRef.current = merged.content;
               onUpdateElement(updatedElement, false);
@@ -478,7 +485,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               rotation: 0,
               zIndex: elements.length + 1,
               content: merged.content,
-              strokeWidth: 1,
+              strokeWidth: drawSize,
             };
             lastCommittedSessionContentRef.current = merged.content;
             setDrawSessionElementId(newDrawElement.id);
@@ -791,7 +798,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   d={pointsToSvgPath(currentDrawPoints)}
                   fill="none"
                   stroke="#121214"
-                  strokeWidth="1"
+                  strokeWidth={drawSize}
                   vectorEffect="non-scaling-stroke"
                   strokeLinecap="round"
                   strokeLinejoin="round"
