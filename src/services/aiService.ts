@@ -1,4 +1,5 @@
 import { AiOption, JewelryItem } from '../types';
+import { EnhanceOption } from '../constants/enhanceOptions';
 import { rasterizeSvgMarkupToPng } from '../utils/canvasCapture';
 import { svgToDataUrl } from '../utils/svg/dataUrl';
 import { apiFetch } from './apiClient';
@@ -43,24 +44,26 @@ export async function fetchAiEngravingOptions(
   return { title: prompt, options };
 }
 
-export type EnhanceMode = 'ai_generated' | 'manual';
-
 interface BackendEnhanceResponse {
   svg: string;
   provider: string;
 }
 
-/** Send a raster snapshot to the backend; AI enhance + vectorization happen server-side only. */
+/** Send a raster snapshot to the backend with selected enhance options. */
 export async function fetchAiEnhance(
   imageDataUrl: string,
-  mode: EnhanceMode,
+  options: EnhanceOption[],
   prompt: string
 ): Promise<{ svgCode: string; previewUrl: string; provider: string }> {
+  if (options.length === 0) {
+    throw new Error('Select at least one enhance option');
+  }
+
   const data = await apiFetch<BackendEnhanceResponse>('/v1/ai/enhance', {
     method: 'POST',
     body: JSON.stringify({
       image_b64: imageDataUrl,
-      mode,
+      options,
       prompt: prompt.trim(),
     }),
   });
@@ -84,7 +87,7 @@ export async function fetchAiRefineOptions(
 ): Promise<AiOption[]> {
   const pngDataUrl = await rasterizeSvgMarkupToPng(currentSvg);
   const hint = instruction.trim() || 'Refine for laser engraving';
-  const result = await fetchAiEnhance(pngDataUrl, 'ai_generated', hint);
+  const result = await fetchAiEnhance(pngDataUrl, ['stylize'], hint);
 
   return [
     {

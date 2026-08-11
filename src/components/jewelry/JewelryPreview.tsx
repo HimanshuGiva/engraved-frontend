@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { JewelryItem, CanvasElement } from '../../types';
+import { JewelryItem, CanvasElement, visibleLayers } from '../../types';
 import { generateCompositeSvg } from '../../utils/svgUtils';
 import { Sparkles, ArrowLeft, Check, ZoomIn, RotateCw, ShieldCheck } from 'lucide-react';
 
@@ -22,6 +22,7 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const compositeSvg = generateCompositeSvg(elements, jewelry);
+  const displayLayers = visibleLayers(elements);
 
   // Metal Material gradient styling for photorealistic jewelry finish
   const getMaterialGradient = () => {
@@ -195,7 +196,7 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
           <div className="space-y-3 border-t border-[#E8E2D5] pt-4">
             <h3 className="font-serif font-bold text-base text-[#121214]">Personalization Elements</h3>
             <div className="space-y-2">
-              {elements.map((el, i) => (
+              {displayLayers.map((el, i) => (
                 <div key={el.id} className="p-3.5 bg-[#FAF8F5] rounded-2xl border border-[#E8E2D5] flex items-center justify-between text-xs">
                   <div className="flex items-center space-x-2.5">
                     <span className="w-5 h-5 rounded-full bg-[#121214] text-[#C5A059] font-mono text-[10px] flex items-center justify-center font-bold">

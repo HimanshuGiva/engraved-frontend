@@ -1,9 +1,13 @@
+import type { FulfillmentStatus, OrderChannel } from './constants/fulfillmentStatus';
+
+export type { OrderChannel, FulfillmentStatus };
+
 export type JewelryMaterial = '18k_gold' | 'silver' | 'rose_gold' | 'platinum';
 export type JewelryType = 'pendant' | 'ring' | 'locket' | 'bracelet' | 'coin';
 
 export interface EngravingConstraints {
-  minStrokeWidthMm: number; // e.g. 0.25mm
-  maxComplexityScore: number; // Max path nodes
+  minStrokeWidthMm: number;
+  maxComplexityScore: number;
   maxCharacters: number;
   safeWidthMm: number;
   safeHeightMm: number;
@@ -14,7 +18,6 @@ export interface EngravingConstraints {
 export interface JewelryItem {
   id: string;
   sku: string;
-  /** Backend catalog SKU code (P1, P2, P3) used when submitting orders. */
   backendSkuCode: string;
   name: string;
   type: JewelryType;
@@ -28,7 +31,6 @@ export interface JewelryItem {
   popularSuggestion?: string;
 }
 
-/** Rectangular marquee on the engraving surface, in canvas percent (0–100). */
 export interface CanvasRegion {
   left: number;
   top: number;
@@ -42,26 +44,20 @@ export interface CanvasElement {
   id: string;
   type: CanvasElementType;
   name: string;
-  x: number; // relative to canvas % (0 - 100)
-  y: number; // relative to canvas % (0 - 100)
-  width: number; // relative %
-  height: number; // relative %
-  rotation: number; // degrees
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
   zIndex: number;
-  content: string; // SVG code, path data string, or plain text
+  content: string;
   strokeWidth?: number;
   color?: string;
   isAiGenerated?: boolean;
   isCustomerHandwriting?: boolean;
-  // For type 'eraser' only: id of the element this eraser stroke masks. The
-  // eraser never touches the target's own `content` — it lives as its own
-  // independent, deletable layer and is applied on top as a non-destructive
-  // mask, so erasing is always fully reversible (delete this layer to
-  // instantly restore the original artwork underneath).
   targetElementId?: string;
 }
 
-/** Layer types the eraser can affect — text is intentionally excluded. */
 export const ERASABLE_LAYER_TYPES: CanvasElementType[] = [
   'svg_ai',
   'freehand_draw',
@@ -74,7 +70,6 @@ export function isErasableLayer(type: CanvasElementType): boolean {
   return ERASABLE_LAYER_TYPES.includes(type);
 }
 
-/** Layers shown in the UI — eraser strokes are history-only, not listed. */
 export function isVisibleLayer(el: CanvasElement): boolean {
   return el.type !== 'eraser';
 }
@@ -87,7 +82,6 @@ export interface AiOption {
   id: string;
   title: string;
   svgCode: string;
-  /** PNG data URL for reliable modal previews */
   previewUrl: string;
   styleTag: string;
 }
@@ -95,11 +89,14 @@ export interface AiOption {
 export interface SavedDesignBundle {
   designId: string;
   createdAt: string;
+  channel: OrderChannel;
   jewelry: JewelryItem;
   elements: CanvasElement[];
   compositeSvg: string;
   totalPriceInr: number;
   messageId?: string;
+  fulfillmentStatus?: FulfillmentStatus;
+  jobError?: string | null;
 }
 
 export type MessageContentType = 'text' | 'photo' | 'video';

@@ -40,6 +40,7 @@ export default function StudioApp() {
   const [selectedRegion, setSelectedRegion] = useState<CanvasRegion | null>(null);
   const [activeTool, setActiveTool] = useState<ToolMode>('select');
   const [eraserSize, setEraserSize] = useState(6);
+  const [drawSize, setDrawSize] = useState(2);
   const [linkedMessageId, setLinkedMessageId] = useState<string | null>(null);
   const [savedBundle, setSavedBundle] = useState<SavedDesignBundle | null>(null);
   const propertiesPanelRef = useRef<HTMLDivElement>(null);
@@ -296,6 +297,7 @@ export default function StudioApp() {
     if (!selectedJewelry) return;
     const composite = generateCompositeSvg(currentElements, selectedJewelry);
     const order = await createAppOrder({
+      channel: 'pos',
       sku_code: selectedJewelry.backendSkuCode,
       final_svg: composite,
       ...(linkedMessageId ? { message_id: linkedMessageId } : {}),
@@ -304,10 +306,12 @@ export default function StudioApp() {
       buildSavedDesignBundle({
         orderId: order.id,
         createdAt: order.created_at,
+        channel: order.channel,
         jewelry: selectedJewelry,
         elements: currentElements,
         compositeSvg: composite,
         messageId: linkedMessageId ?? undefined,
+        fulfillmentStatus: order.fulfillment_status,
       })
     );
     setCurrentStep('confirm');
@@ -363,6 +367,8 @@ export default function StudioApp() {
                   onClear={handleClearCanvas}
                   eraserSize={eraserSize}
                   onEraserSizeChange={setEraserSize}
+                  drawSize={drawSize}
+                  onDrawSizeChange={setDrawSize}
                 />
               </div>
 
@@ -389,6 +395,7 @@ export default function StudioApp() {
                   onOpenAiModal={modals.openAiCreate}
                   onOpenUploadModal={() => modals.setIsUploadModalOpen(true)}
                   eraserSize={eraserSize}
+                  drawSize={drawSize}
                 />
               </div>
 

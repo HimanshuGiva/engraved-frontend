@@ -254,10 +254,3 @@ export const ENHANCEABLE_TYPES: CanvasElement['type'][] = [
 export function isEnhanceableElement(el: CanvasElement): boolean {
   return ENHANCEABLE_TYPES.includes(el.type);
 }
-
-export function defaultEnhanceMode(el: CanvasElement): 'ai_generated' | 'manual' {
-  if (el.type === 'freehand_draw' || el.type === 'handwriting') {
-    return 'manual';
-  }
-  return 'ai_generated';
-}
