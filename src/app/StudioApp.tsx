@@ -39,7 +39,8 @@ export default function StudioApp() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<CanvasRegion | null>(null);
   const [activeTool, setActiveTool] = useState<ToolMode>('select');
-  const [eraserSize, setEraserSize] = useState(6);
+  const [placingShapeKind, setPlacingShapeKind] = useState<string | null>(null);
+  const [eraserSize, setEraserSize] = useState(20);
   const [linkedMessageId, setLinkedMessageId] = useState<string | null>(null);
   const [savedBundle, setSavedBundle] = useState<SavedDesignBundle | null>(null);
   const propertiesPanelRef = useRef<HTMLDivElement>(null);
@@ -258,23 +259,18 @@ export default function StudioApp() {
   };
 
   const handleAddShape = (shapeKind: string) => {
+    // Enter "placing" mode: user will click-drag on canvas to size the shape
     const pathD = SHAPE_PRESETS[shapeKind];
     if (!pathD) return;
-    setActiveTool('select');
-    handleAddElement({
-      id: `shape-${Date.now()}`,
-      type: 'shape',
-      name: SHAPE_LABELS[shapeKind] || 'Shape',
-      x: 50,
-      y: 50,
-      width: 40,
-      height: 40,
-      rotation: 0,
-      zIndex: currentElements.length + 1,
-      content: pathD,
-      strokeWidth: 2,
-    });
+    setActiveTool('shape');
+    setPlacingShapeKind(shapeKind);
   };
+
+  useEffect(() => {
+    if (activeTool !== 'shape') {
+      setPlacingShapeKind(null);
+    }
+  }, [activeTool]);
 
   const handleAddTextFromModal = (text: string, fontStyle: string) => {
     setActiveTool('select');
@@ -374,6 +370,7 @@ export default function StudioApp() {
                   selectedElementId={selectedElementId}
                   selectedRegion={selectedRegion}
                   activeTool={activeTool}
+                  placingShapeKind={placingShapeKind}
                   onSelectElement={(id) => {
                     setSelectedElementId(id);
                     if (id) setSelectedRegion(null);

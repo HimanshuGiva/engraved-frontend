@@ -4,6 +4,7 @@ import { ToolMode } from '../../constants/tools';
 import { getFontClass } from '../../constants/fonts';
 import { pointsToSvgPath, buildEraserMaskDataUri, buildFreehandSessionData, eraserStrokesFromElements, EraserStroke, canvasPointsToLocalSubpaths, subpathsToSvgPath } from '../../utils/svgUtils';
 import { normalizeCanvasRegion } from '../../utils/canvasCapture';
+import { SHAPE_PRESETS, SHAPE_LABELS } from '../../constants/shapes';
 import { Sparkles, Pencil, Upload } from 'lucide-react';
 
 interface CanvasWorkspaceProps {
@@ -22,6 +23,7 @@ interface CanvasWorkspaceProps {
   onOpenAiModal: () => void;
   onOpenUploadModal: () => void;
   eraserSize?: number;
+  placingShapeKind?: string | null;
 }
 
 /**
@@ -90,9 +92,11 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   onSelectTool,
   onOpenAiModal,
   onOpenUploadModal,
-  eraserSize = 6,
+  eraserSize = 20,
+  placingShapeKind = null,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const DRAW_STROKE_WIDTH = 2;
   const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
   const [currentDrawPoints, setCurrentDrawPoints] = useState<{ x: number; y: number }[]>([]);
   const drawPointsRef = useRef<{ x: number; y: number }[]>([]);
@@ -183,6 +187,11 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const [regionAnchor, setRegionAnchor] = useState<{ x: number; y: number } | null>(null);
   const [regionCursor, setRegionCursor] = useState<{ x: number; y: number } | null>(null);
 
+  // Shape placement (click -> drag to size)
+  const [isPlacingShape, setIsPlacingShape] = useState(false);
+  const [shapeAnchor, setShapeAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [shapeCursor, setShapeCursor] = useState<{ x: number; y: number } | null>(null);
+
   const pointerToCanvasPercent = (clientX: number, clientY: number) => {
     const container = containerRef.current;
     if (!container) return null;
@@ -198,6 +207,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       ? normalizeCanvasRegion(regionAnchor.x, regionAnchor.y, regionCursor.x, regionCursor.y)
       : null;
   const displayedRegion = liveRegion ?? selectedRegion;
+  const liveShapeRegion =
+    isPlacingShape && shapeAnchor && shapeCursor
+      ? normalizeCanvasRegion(shapeAnchor.x, shapeAnchor.y, shapeCursor.x, shapeCursor.y)
+      : null;
 
   useEffect(() => {
     if (activeTool !== 'select') {
@@ -315,6 +328,21 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
 
   // Freehand Drawing pointer events
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Shape placement start
+    if (activeTool === 'shape' && placingShapeKind !== null) {
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {}
+
+      const point = pointerToCanvasPercent(e.clientX, e.clientY);
+      if (!point) return;
+
+      onSelectElement(null);
+      setIsPlacingShape(true);
+      setShapeAnchor(point);
+      setShapeCursor(point);
+      return;
+    }
     if (activeTool === 'select' && e.target === containerRef.current) {
       try {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -363,6 +391,11 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activeTool === 'shape' && isPlacingShape) {
+      const point = pointerToCanvasPercent(e.clientX, e.clientY);
+      if (point) setShapeCursor(point);
+      return;
+    }
     if (activeTool === 'select' && isSelectingRegion) {
       const point = pointerToCanvasPercent(e.clientX, e.clientY);
       if (point) setRegionCursor(point);
@@ -419,6 +452,38 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       window.cancelAnimationFrame(drawRafRef.current);
       drawRafRef.current = null;
       setCurrentDrawPoints([...drawPointsRef.current]);
+    }
+
+    // Finish placing shape
+    if (activeTool === 'shape' && isPlacingShape && shapeAnchor && shapeCursor) {
+      const region = normalizeCanvasRegion(shapeAnchor.x, shapeAnchor.y, shapeCursor.x, shapeCursor.y);
+      // Require a minimal size to commit
+      if (region.width > 0.5 && region.height > 0.5 && placingShapeKind) {
+        const centerX = region.left + region.width / 2;
+        const centerY = region.top + region.height / 2;
+        const newEl = {
+          id: `shape-${Date.now()}`,
+          type: 'shape' as const,
+          name: SHAPE_LABELS[placingShapeKind] || 'Shape',
+          x: centerX,
+          y: centerY,
+          width: region.width,
+          height: region.height,
+          rotation: 0,
+          zIndex: elements.length + 1,
+          content: SHAPE_PRESETS[placingShapeKind],
+          strokeWidth: 2,
+        };
+        onAddElement(newEl, true);
+      }
+      setIsPlacingShape(false);
+      setShapeAnchor(null);
+      setShapeCursor(null);
+      try {
+        if (e) (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+      // switch back to select
+      onSelectTool?.('select');
     }
 
     if (activeTool === 'select' && isSelectingRegion && regionAnchor && regionCursor) {
@@ -478,7 +543,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               rotation: 0,
               zIndex: elements.length + 1,
               content: merged.content,
-              strokeWidth: 1,
+              strokeWidth: 2,
             };
             lastCommittedSessionContentRef.current = merged.content;
             setDrawSessionElementId(newDrawElement.id);
@@ -583,7 +648,11 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             onPointerCancel={handlePointerCancel}
             onLostPointerCapture={handleLostPointerCapture}
             className={`relative bg-[#FAF8F5] border-2 border-[#E8E2D5] shadow-inner overflow-hidden select-none touch-none transition-all flex-shrink-0 ${
-              activeTool === 'draw' ? 'cursor-crosshair' : activeTool === 'erase' ? '' : 'cursor-default'
+              activeTool === 'draw' || activeTool === 'shape'
+                ? 'cursor-crosshair'
+                : activeTool === 'erase'
+                ? ''
+                : 'cursor-default'
             } ${getShapeStyle()}`}
             style={activeTool === 'erase' ? { cursor: ERASER_CURSOR } : undefined}
           >
@@ -677,7 +746,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   onPointerDown={(e) => startDragging(e, el)}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (isDrawingFreehand || activeTool === 'erase') return;
+                    if (isDrawingFreehand || activeTool === 'erase' || activeTool === 'shape') return;
                     onSelectElement(el.id);
                   }}
                   style={{
@@ -688,7 +757,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                     height: `${el.height}%`,
                     transform: `translate(-50%, -50%) rotate(${el.rotation}deg)`,
                     zIndex: el.zIndex,
-                    pointerEvents: activeTool === 'draw' || activeTool === 'erase' ? 'none' : undefined,
+                    pointerEvents: activeTool === 'draw' || activeTool === 'erase' || activeTool === 'shape' ? 'none' : undefined,
                     cursor: activeTool === 'erase' ? ERASER_CURSOR : undefined,
                   }}
                   className={`group absolute transition-shadow ${
@@ -784,6 +853,23 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               </div>
             )}
 
+            {/* Live Shape Placement Preview */}
+            {liveShapeRegion && placingShapeKind && (
+              <div
+                className="absolute z-40 pointer-events-none border-2 border-[#C5A059] bg-[#C5A059]/10"
+                style={{
+                  left: `${liveShapeRegion.left}%`,
+                  top: `${liveShapeRegion.top}%`,
+                  width: `${liveShapeRegion.width}%`,
+                  height: `${liveShapeRegion.height}%`,
+                }}
+              >
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full pointer-events-none">
+                  <path d={SHAPE_PRESETS[placingShapeKind]} fill="none" stroke="#121214" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+            )}
+
             {/* Live Freehand Drawing Overlay */}
             {isDrawingFreehand && currentDrawPoints.length > 1 && (
               <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none z-20">
@@ -791,7 +877,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   d={pointsToSvgPath(currentDrawPoints)}
                   fill="none"
                   stroke="#121214"
-                  strokeWidth="1"
+                  strokeWidth={DRAW_STROKE_WIDTH}
                   vectorEffect="non-scaling-stroke"
                   strokeLinecap="round"
                   strokeLinejoin="round"

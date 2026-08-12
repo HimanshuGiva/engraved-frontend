@@ -66,7 +66,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onUndo,
   onRedo,
   onClear,
-  eraserSize = 6,
+  eraserSize = 20,
   onEraserSizeChange,
 }) => {
   const [isShapeMenuOpen, setIsShapeMenuOpen] = useState(false);
@@ -216,10 +216,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             <span>Eraser Size</span>
             <span className="font-mono text-[#121214] font-bold">{eraserSize}px</span>
           </div>
-          <input
+            <input
             type="range"
             min="2"
-            max="20"
+            max="40"
             step="1"
             value={eraserSize}
             onChange={(e) => onEraserSizeChange(Number(e.target.value))}
