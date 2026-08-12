@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Check, Sparkles, Loader2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, Check, Loader2 } from 'lucide-react';
 import { SAMPLE_MOTIFS } from '../../data/sampleMotifs';
-import { fetchAiEnhance, EnhanceMode } from '../../services/aiService';
+import { fetchAiEnhance } from '../../services/aiService';
 import { readFileAsDataUrl } from '../../utils/canvasCapture';
+
+const UPLOAD_ENHANCE_OPTIONS = ['photo_lineart', 'stylize'] as const;
 
 interface ImageUploadModalProps {
   isOpen: boolean;
@@ -19,7 +21,6 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [processedSvg, setProcessedSvg] = useState<string | null>(null);
   const [vectorName, setVectorName] = useState<string>('Uploaded Vector Motif');
-  const [enhanceMode, setEnhanceMode] = useState<EnhanceMode>('ai_generated');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processError, setProcessError] = useState<string | null>(null);
 
@@ -30,20 +31,19 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
       setSelectedFile(null);
       setPreviewSrc(null);
       setProcessedSvg(null);
-      setEnhanceMode('ai_generated');
       setVectorName('Uploaded Vector Motif');
       setProcessError(null);
     }
   }, [isOpen]);
 
-  const processRasterFile = async (file: File, mode: EnhanceMode = enhanceMode) => {
+  const processRasterFile = async (file: File) => {
     setIsProcessing(true);
     setProcessError(null);
     setProcessedSvg(null);
 
     try {
       const dataUrl = await readFileAsDataUrl(file);
-      const result = await fetchAiEnhance(dataUrl, mode, '');
+      const result = await fetchAiEnhance(dataUrl, [...UPLOAD_ENHANCE_OPTIONS], '');
       setProcessedSvg(result.svgCode);
     } catch (e) {
       setProcessError(e instanceof Error ? e.message : 'Processing failed');
@@ -86,13 +86,6 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
     setProcessError(null);
   };
 
-  const applyEnhanceMode = (mode: EnhanceMode) => {
-    setEnhanceMode(mode);
-    if (selectedFile && selectedFile.type !== 'image/svg+xml') {
-      void processRasterFile(selectedFile, mode);
-    }
-  };
-
   const handleInsert = () => {
     if (!processedSvg) return;
     onAddImageVector(processedSvg, vectorName);
@@ -112,7 +105,7 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
             </div>
             <div>
               <h2 className="font-serif font-bold text-xl text-[#121214]">Upload Image</h2>
-              <p className="text-[#6E6A63] text-xs">Raster files are enhanced and converted to SVG on the server</p>
+              <p className="text-[#6E6A63] text-xs">Raster files are AI-enhanced and converted to SVG on the server</p>
             </div>
           </div>
 
@@ -150,9 +143,8 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
             </div>
 
             <div className="space-y-2 pt-1">
-              <span className="text-[10px] font-mono font-bold uppercase text-[#8A857C] tracking-wider flex items-center space-x-1">
-                <Sparkles className="w-3 h-3 text-[#C5A059]" />
-                <span>Or select a sample motif vector:</span>
+              <span className="text-[10px] font-mono font-bold uppercase text-[#8A857C] tracking-wider">
+                Or select a sample motif vector:
               </span>
               <div className="grid grid-cols-2 gap-2">
                 {SAMPLE_MOTIFS.map((preset) => (
@@ -189,47 +181,17 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
             </div>
 
             {selectedFile && selectedFile.type !== 'image/svg+xml' && (
-              <div className="space-y-3 bg-[#FAF8F5] p-4 rounded-2xl border border-[#E8E2D5] text-xs">
-                <div className="space-y-1.5">
-                  <span className="font-bold text-[#121214] uppercase text-[10px] tracking-wider">Enhance style</span>
-                  <div className="grid grid-cols-2 gap-1.5 p-1 bg-white rounded-xl border border-[#E8E2D5]">
-                    <button
-                      type="button"
-                      onClick={() => applyEnhanceMode('ai_generated')}
-                      className={`py-1.5 px-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
-                        enhanceMode === 'ai_generated'
-                          ? 'bg-[#121214] text-white shadow-2xs'
-                          : 'text-[#6E6A63] hover:text-[#121214]'
-                      }`}
-                    >
-                      Clean line art
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyEnhanceMode('manual')}
-                      className={`py-1.5 px-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
-                        enhanceMode === 'manual'
-                          ? 'bg-[#121214] text-white shadow-2xs'
-                          : 'text-[#6E6A63] hover:text-[#121214]'
-                      }`}
-                    >
-                      Hand-drawn
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end pt-1 border-t border-[#E8E2D5]">
-                  <button
-                    onClick={() => {
-                      setPreviewSrc(null);
-                      setSelectedFile(null);
-                      setProcessedSvg(null);
-                    }}
-                    className="text-[10px] uppercase tracking-wider text-[#C5A059] font-bold hover:underline"
-                  >
-                    Change Image
-                  </button>
-                </div>
+              <div className="flex items-center justify-end pt-1">
+                <button
+                  onClick={() => {
+                    setPreviewSrc(null);
+                    setSelectedFile(null);
+                    setProcessedSvg(null);
+                  }}
+                  className="text-[10px] uppercase tracking-wider text-[#C5A059] font-bold hover:underline"
+                >
+                  Change Image
+                </button>
               </div>
             )}
 

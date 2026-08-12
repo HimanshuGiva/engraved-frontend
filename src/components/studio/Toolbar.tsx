@@ -51,6 +51,8 @@ interface ToolbarProps {
   onClear: () => void;
   eraserSize?: number;
   onEraserSizeChange?: (size: number) => void;
+  drawSize?: number;
+  onDrawSizeChange?: (size: number) => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -68,6 +70,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onClear,
   eraserSize = 20,
   onEraserSizeChange,
+  drawSize = 2,
+  onDrawSizeChange,
 }) => {
   const [isShapeMenuOpen, setIsShapeMenuOpen] = useState(false);
 
@@ -209,6 +213,25 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <span>Gift QR</span>
         </button>
       </div>
+
+      {activeTool === 'draw' && onDrawSizeChange && (
+        <div className="flex flex-col gap-3 rounded-3xl border border-[#E8E2D5] bg-[#FAF8F5] p-4">
+          <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-[#6E6A63]">
+            <span>Pencil Size</span>
+            <span className="font-mono text-[#121214] font-bold">{drawSize}px</span>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max="20"
+            step="1"
+            value={drawSize}
+            onChange={(e) => onDrawSizeChange(Number(e.target.value))}
+            className="w-full accent-[#C5A059] cursor-pointer"
+            title="Pencil Brush Size"
+          />
+        </div>
+      )}
 
       {activeTool === 'erase' && onEraserSizeChange && (
         <div className="flex flex-col gap-3 rounded-3xl border border-[#E8E2D5] bg-[#FAF8F5] p-4">

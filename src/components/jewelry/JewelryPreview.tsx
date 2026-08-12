@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { JewelryItem, CanvasElement } from '../../types';
+import { JewelryItem, CanvasElement, visibleLayers } from '../../types';
 import { generateCompositeSvg } from '../../utils/svgUtils';
 import { Sparkles, ArrowLeft, Check, ZoomIn, RotateCw, ShieldCheck } from 'lucide-react';
 
@@ -22,21 +22,7 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const compositeSvg = generateCompositeSvg(elements, jewelry);
-
-  // Metal Material gradient styling for photorealistic jewelry finish
-  const getMaterialGradient = () => {
-    switch (jewelry.material) {
-      case '18k_gold':
-        return 'from-amber-100 via-amber-200 to-amber-400';
-      case 'rose_gold':
-        return 'from-rose-100 via-rose-200 to-rose-300';
-      case 'platinum':
-        return 'from-zinc-100 via-zinc-200 to-zinc-400';
-      case 'silver':
-      default:
-        return 'from-slate-100 via-slate-200 to-slate-400';
-    }
-  };
+  const displayLayers = visibleLayers(elements);
 
   const getShapeClasses = () => {
     switch (jewelry.constraints.shape) {
@@ -144,17 +130,18 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
             {/* Pendant Chain Loop / Bail */}
             <div className={`w-5 h-7 -mb-1 rounded-t-full border-2 bg-gradient-to-b ${getBailGradient()} z-10 shadow-xs flex-shrink-0`} />
 
-            {/* Outer Metallic Bezel */}
+            {/* Outer Metallic Bezel — real product photo as the physical jewelry base */}
             <div
-              className={`relative bg-gradient-to-br ${getMaterialGradient()} ${shapeStyle.outer} shadow-md transition-transform duration-500 flex items-center justify-center border-4 border-white/60 flex-shrink-0`}
+              className={`relative ${shapeStyle.outer} shadow-md transition-transform duration-500 flex items-center justify-center border-4 border-white/60 flex-shrink-0 bg-cover bg-center`}
               style={{
                 transform: `scale(${zoomLevel})`,
                 boxShadow: `0 20px 40px -10px rgba(0, 0, 0, 0.15), inset 0 2px 10px rgba(255, 255, 255, 0.8)`,
+                backgroundImage: `url(${jewelry.imageUrl})`,
               }}
             >
-              {/* Inner High Polish Engraving Canvas with Metal Groove Depth Simulation */}
-              <div className={`relative w-full h-full bg-white/20 ${shapeStyle.inner} flex items-center justify-center border border-white/40 backdrop-blur-xs overflow-hidden`}>
-                
+              {/* Inner High Polish Engraving Canvas over the photo */}
+              <div className={`relative w-full h-full ${shapeStyle.inner} flex items-center justify-center border border-white/40 overflow-hidden`}>
+
                 {/* Physical Laser Engraved Composite SVG Overlay */}
                 <div
                   className="w-full h-full transition-all duration-300"
@@ -191,25 +178,6 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
             <p className="text-[#6E6A63] text-xs mt-1">{jewelry.description}</p>
           </div>
 
-          {/* Design Elements Breakdown */}
-          <div className="space-y-3 border-t border-[#E8E2D5] pt-4">
-            <h3 className="font-serif font-bold text-base text-[#121214]">Personalization Elements</h3>
-            <div className="space-y-2">
-              {elements.map((el, i) => (
-                <div key={el.id} className="p-3.5 bg-[#FAF8F5] rounded-2xl border border-[#E8E2D5] flex items-center justify-between text-xs">
-                  <div className="flex items-center space-x-2.5">
-                    <span className="w-5 h-5 rounded-full bg-[#121214] text-[#C5A059] font-mono text-[10px] flex items-center justify-center font-bold">
-                      {i + 1}
-                    </span>
-                    <span className="font-bold text-[#121214]">{el.name}</span>
-                  </div>
-                  <span className="text-[10px] bg-white border border-[#E8E2D5] text-[#8A857C] px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider">
-                    {el.type.replace('_', ' ')}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
 
           {/* Pricing Breakdown */}
           <div className="space-y-2.5 border-t border-[#E8E2D5] pt-4 text-xs">
