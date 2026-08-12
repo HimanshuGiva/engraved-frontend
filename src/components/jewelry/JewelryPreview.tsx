@@ -24,6 +24,21 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
   const compositeSvg = generateCompositeSvg(elements, jewelry);
   const displayLayers = visibleLayers(elements);
 
+  // Metal Material gradient styling for photorealistic jewelry finish
+  const getMaterialGradient = () => {
+    switch (jewelry.material) {
+      case '18k_gold':
+        return 'from-amber-100 via-amber-200 to-amber-400';
+      case 'rose_gold':
+        return 'from-rose-100 via-rose-200 to-rose-300';
+      case 'platinum':
+        return 'from-zinc-100 via-zinc-200 to-zinc-400';
+      case 'silver':
+      default:
+        return 'from-slate-100 via-slate-200 to-slate-400';
+    }
+  };
+
   const getShapeClasses = () => {
     switch (jewelry.constraints.shape) {
       case 'circle':
@@ -130,17 +145,16 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
             {/* Pendant Chain Loop / Bail */}
             <div className={`w-5 h-7 -mb-1 rounded-t-full border-2 bg-gradient-to-b ${getBailGradient()} z-10 shadow-xs flex-shrink-0`} />
 
-            {/* Outer Metallic Bezel — real product photo as the physical jewelry base */}
+            {/* Outer Metallic Bezel */}
             <div
-              className={`relative ${shapeStyle.outer} shadow-md transition-transform duration-500 flex items-center justify-center border-4 border-white/60 flex-shrink-0 bg-cover bg-center`}
+              className={`relative bg-gradient-to-br ${getMaterialGradient()} ${shapeStyle.outer} shadow-md transition-transform duration-500 flex items-center justify-center border-4 border-white/60 flex-shrink-0`}
               style={{
                 transform: `scale(${zoomLevel})`,
                 boxShadow: `0 20px 40px -10px rgba(0, 0, 0, 0.15), inset 0 2px 10px rgba(255, 255, 255, 0.8)`,
-                backgroundImage: `url(${jewelry.imageUrl})`,
               }}
             >
-              {/* Inner High Polish Engraving Canvas over the photo */}
-              <div className={`relative w-full h-full ${shapeStyle.inner} flex items-center justify-center border border-white/40 overflow-hidden`}>
+              {/* Inner High Polish Engraving Canvas with Metal Groove Depth Simulation */}
+              <div className={`relative w-full h-full bg-white/20 ${shapeStyle.inner} flex items-center justify-center border border-white/40 backdrop-blur-xs overflow-hidden`}>
 
                 {/* Physical Laser Engraved Composite SVG Overlay */}
                 <div

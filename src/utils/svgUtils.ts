@@ -183,7 +183,7 @@ export function generateCompositeSvg(elements: CanvasElement[], jewelry: Jewelry
     }
   }
 
-  const composite = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1000" height="1000">
+  const composite = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none">
   <desc>GIVA Live-Engrave Production Vector Export - SKU: ${jewelry.sku} - Safe Area: ${jewelry.constraints.safeWidthMm}mm x ${jewelry.constraints.safeHeightMm}mm</desc>
   <defs>${maskDefs}
   </defs>
