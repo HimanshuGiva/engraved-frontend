@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CanvasElement, CanvasRegion, JewelryItem, isErasableLayer } from '../../types';
 import { ToolMode } from '../../constants/tools';
 import { getFontClass } from '../../constants/fonts';
@@ -127,6 +127,18 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     lastCommittedSessionContentRef.current = null;
   };
 
+  // A drawing session merges multiple strokes into one SVG path, which can
+  // only have a single strokeWidth. End the session when the brush size
+  // changes so new strokes start a fresh layer instead of retagging every
+  // prior stroke in the merged path with the new width.
+  const endDrawSessionIfSizeChanged = () => {
+    if (!drawSessionElementId) return;
+    const sessionEl = elements.find((el) => el.id === drawSessionElementId);
+    if (sessionEl && (sessionEl.strokeWidth ?? drawSize) !== drawSize) {
+      endDrawSession();
+    }
+  };
+
   // Leaving the Draw tool is the explicit "I'm done with this drawing"
   // signal — the next time Draw is selected, a fresh stroke starts a brand
   // new layer rather than resuming the old one.
@@ -159,7 +171,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   }, [activeTool]);
 
   const prevDrawSizeRef = useRef(drawSize);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       activeTool === 'draw' &&
       drawSessionElementId !== null &&
@@ -365,6 +377,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     }
 
     if (activeTool === 'draw') {
+      endDrawSessionIfSizeChanged();
+
       try {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       } catch {}
@@ -526,7 +540,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                 y: merged.y,
                 width: merged.width,
                 height: merged.height,
-                strokeWidth: drawSize,
+                strokeWidth: existing.strokeWidth ?? drawSize,
               };
               lastCommittedSessionContentRef.current = merged.content;
               onUpdateElement(updatedElement, false);
