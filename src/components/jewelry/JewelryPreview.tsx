@@ -128,14 +128,6 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
                 <ZoomIn className="w-3.5 h-3.5 text-[#C5A059]" />
                 <span>{zoomLevel === 1 ? 'Zoom Detail' : 'Reset Zoom'}</span>
               </button>
-
-              <button
-                onClick={() => setLightingAngle((prev) => (prev + 45) % 360)}
-                className="p-1.5 px-3 rounded-full bg-[#FAF8F5] border border-[#E8E2D5] text-[#121214] hover:border-[#C5A059] flex items-center space-x-1.5 text-[11px] font-semibold uppercase tracking-wider"
-              >
-                <RotateCw className="w-3.5 h-3.5 text-[#C5A059]" />
-                <span>Rotate Light</span>
-              </button>
             </div>
           </div>
 
