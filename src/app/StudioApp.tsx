@@ -300,6 +300,7 @@ export default function StudioApp() {
     const order = await createAppOrder({
       channel: 'pos',
       sku_code: selectedJewelry.backendSkuCode,
+      material_code: selectedJewelry.material,
       final_svg: composite,
       ...(linkedMessageId ? { message_id: linkedMessageId } : {}),
     });

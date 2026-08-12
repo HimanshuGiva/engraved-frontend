@@ -1,6 +1,8 @@
 import { GiftMessage, MessageContentType } from '../types';
 import { svgToDataUrl } from '../utils/svg/dataUrl';
-import { apiFetch, apiFetchText, ApiError } from './apiClient';
+import { apiFetch, apiFetchHeaders, apiFetchText, ApiError } from './apiClient';
+
+const ACCESS_TOKEN = (import.meta.env.VITE_ACCESS_TOKEN as string | undefined) ?? '';
 
 interface PresignResponse {
   upload_url: string;
@@ -23,14 +25,27 @@ export async function uploadToPresignedUrl(
   file: Blob,
   contentType: string
 ): Promise<void> {
+  const isApiProxy = uploadUrl.includes('/v1/uploads/object');
+  const headers = apiFetchHeaders({ 'Content-Type': contentType }, uploadUrl);
+  if (isApiProxy && ACCESS_TOKEN) {
+    headers.set('xaccesstoken', ACCESS_TOKEN);
+  }
+
   const res = await fetch(uploadUrl, {
     method: 'PUT',
-    headers: { 'Content-Type': contentType },
+    headers,
     body: file,
   });
 
   if (!res.ok) {
-    throw new ApiError(`Media upload failed (${res.status})`, res.status);
+    let message = `Media upload failed (${res.status})`;
+    try {
+      const errBody = await res.json();
+      message = errBody?.error?.message ?? message;
+    } catch {
+      // ignore parse errors
+    }
+    throw new ApiError(message, res.status);
   }
 }
 

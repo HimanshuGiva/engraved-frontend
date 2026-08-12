@@ -6,6 +6,7 @@ export interface AppEngravingOrder {
   user_id: string;
   channel: OrderChannel;
   sku_code: string;
+  material_code: string;
   final_svg: string;
   message_id?: string | null;
   fulfillment_status: FulfillmentStatus | string;
@@ -16,6 +17,7 @@ export interface AppEngravingOrder {
 export async function createAppOrder(input: {
   channel?: OrderChannel;
   sku_code: string;
+  material_code: string;
   final_svg: string;
   message_id?: string;
 }): Promise<AppEngravingOrder> {
