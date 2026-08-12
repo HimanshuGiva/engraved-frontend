@@ -98,7 +98,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   drawSize = 2,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const DRAW_STROKE_WIDTH = 2;
   const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
   const [currentDrawPoints, setCurrentDrawPoints] = useState<{ x: number; y: number }[]>([]);
   const drawPointsRef = useRef<{ x: number; y: number }[]>([]);
@@ -478,7 +477,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     if (activeTool === 'shape' && isPlacingShape && shapeAnchor && shapeCursor) {
       const region = normalizeCanvasRegion(shapeAnchor.x, shapeAnchor.y, shapeCursor.x, shapeCursor.y);
       // Require a minimal size to commit
-      if (region.width > 0.5 && region.height > 0.5 && placingShapeKind) {
+      if (region && region.width > 0.5 && region.height > 0.5 && placingShapeKind) {
         const centerX = region.left + region.width / 2;
         const centerY = region.top + region.height / 2;
         const newEl = {
@@ -564,7 +563,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
               rotation: 0,
               zIndex: elements.length + 1,
               content: merged.content,
-              strokeWidth: 2,
+              strokeWidth: drawSize,
             };
             lastCommittedSessionContentRef.current = merged.content;
             setDrawSessionElementId(newDrawElement.id);
@@ -898,7 +897,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                   d={pointsToSvgPath(currentDrawPoints)}
                   fill="none"
                   stroke="#121214"
-                  strokeWidth={DRAW_STROKE_WIDTH}
+                  strokeWidth={drawSize}
                   vectorEffect="non-scaling-stroke"
                   strokeLinecap="round"
                   strokeLinejoin="round"
