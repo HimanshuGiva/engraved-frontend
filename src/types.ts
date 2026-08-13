@@ -56,6 +56,8 @@ export interface CanvasElement {
   isAiGenerated?: boolean;
   isCustomerHandwriting?: boolean;
   targetElementId?: string;
+  /** When true, eraser `content` is a closed path filled in the mask (region replace). */
+  eraserFill?: boolean;
 }
 
 export const ERASABLE_LAYER_TYPES: CanvasElementType[] = [

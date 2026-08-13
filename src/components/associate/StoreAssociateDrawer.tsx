@@ -10,7 +10,7 @@ import { getAppOrder } from '../../services/orderService';
 import { ApiError } from '../../services/apiClient';
 import { bundleFromOrder } from '../../utils/designBundle';
 import { AssociateOrderPanel } from './AssociateOrderPanel';
-import { QrCode, ExternalLink } from 'lucide-react';
+import { Search, ExternalLink } from 'lucide-react';
 
 interface StoreAssociateDrawerProps {
   isOpen: boolean;
@@ -71,7 +71,7 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
 
   if (!isOpen) return null;
 
-  const handleLookupDesign = async () => {
+  const handleSearchDesign = async () => {
     if (!searchId.trim()) return;
     setIsSearching(true);
     setSearchError('');
@@ -102,11 +102,11 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
           <div className="flex items-center justify-between border-b border-[#E8E2D5] pb-4">
             <div className="flex items-center space-x-2.5">
               <div className="w-8 h-8 rounded-full bg-[#FAF8F5] border border-[#E8E2D5] text-[#C5A059] flex items-center justify-center font-bold">
-                <QrCode className="w-4 h-4 text-[#C5A059]" />
+                <Search className="w-4 h-4 text-[#C5A059]" />
               </div>
               <div>
                 <h2 className="font-serif text-lg font-bold text-[#121214]">GIVA Store Associate Station</h2>
-                <p className="text-[#6E6A63] text-xs">Quick lookup — open full terminal for queue view</p>
+                <p className="text-[#6E6A63] text-xs">Quick search — open full terminal for queue view</p>
               </div>
             </div>
 
@@ -130,23 +130,23 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
 
           <div className="space-y-2">
             <label className="text-[10px] font-mono text-[#8A857C] font-bold uppercase tracking-wider">
-              Lookup order ID
+              Search order ID
             </label>
             <div className="flex space-x-2">
               <input
                 type="text"
                 value={searchId}
                 onChange={(e) => setSearchId(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && void handleLookupDesign()}
-                placeholder="Paste order UUID from confirmation"
+                onKeyDown={(e) => e.key === 'Enter' && void handleSearchDesign()}
+                placeholder="Enter order ID"
                 className="flex-1 bg-[#FAF8F5] border border-[#E8E2D5] rounded-xl px-4 py-2.5 text-xs text-[#121214] placeholder-gray-400 font-mono focus:border-[#C5A059] focus:outline-none"
               />
               <button
-                onClick={() => void handleLookupDesign()}
+                onClick={() => void handleSearchDesign()}
                 disabled={isSearching}
                 className="px-5 py-2.5 bg-[#121214] text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-[#C5A059] transition-colors disabled:opacity-50"
               >
-                {isSearching ? 'Searching...' : 'Lookup'}
+                {isSearching ? 'Searching…' : 'Search'}
               </button>
             </div>
             {searchError && <p className="text-rose-600 text-xs font-medium">{searchError}</p>}

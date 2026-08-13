@@ -7,7 +7,6 @@ export function useStudioModals() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isGiftQrModalOpen, setIsGiftQrModalOpen] = useState(false);
   const [isTextModalOpen, setIsTextModalOpen] = useState(false);
-  const [isStoreAssociateOpen, setIsStoreAssociateOpen] = useState(false);
 
   const [refiningElement, setRefiningElement] = useState<CanvasElement | null>(null);
   const [enhancingElement, setEnhancingElement] = useState<CanvasElement | null>(null);
@@ -51,8 +50,6 @@ export function useStudioModals() {
     setIsGiftQrModalOpen,
     isTextModalOpen,
     setIsTextModalOpen,
-    isStoreAssociateOpen,
-    setIsStoreAssociateOpen,
     refiningElement,
     setRefiningElement,
     enhancingElement,

@@ -12,10 +12,9 @@ import { ImageUploadModal } from '../components/modals/ImageUploadModal';
 import { GiftQrModal } from '../components/modals/GiftQrModal';
 import { TextModal } from '../components/modals/TextModal';
 import { ConfirmationScreen } from '../components/associate/ConfirmationScreen';
-import { StoreAssociateDrawer } from '../components/associate/StoreAssociateDrawer';
-import { SHAPE_LABELS, SHAPE_PRESETS } from '../constants/shapes';
+import { SHAPE_PRESETS } from '../constants/shapes';
+import { getEngravingSurfaceAspect } from '../constants/engravingSurface';
 import { ToolMode } from '../constants/tools';
-import { JEWELRY_CATALOG } from '../data/jewelryCatalog';
 import { useCanvasHistory, useClearInvalidSelection } from '../hooks/useCanvasHistory';
 import { useStudioModals } from '../hooks/useStudioModals';
 import { fetchCatalog } from '../services/catalogService';
@@ -27,9 +26,9 @@ import {
   JewelryItem,
   SavedDesignBundle,
 } from '../types';
-import { buildRegionVectorSvg, regionCenter } from '../utils/canvasCapture';
+import { buildRegionReplacementUpdates, buildRegionVectorSvg, regionCenter } from '../utils/canvasCapture';
 import { buildSavedDesignBundle } from '../utils/designBundle';
-import { generateCompositeSvg } from '../utils/svgUtils';
+import { generateCompositeSvg, svgToFillElementBox } from '../utils/svgUtils';
 
 type StudioStep = 'select' | 'studio' | 'preview' | 'confirm';
 
@@ -72,6 +71,7 @@ export default function StudioApp() {
       if (!target) return;
       if (propertiesPanelRef.current?.contains(target)) return;
       if (target.closest('[data-canvas-element]')) return;
+      if (target.closest('[data-canvas-surface]')) return;
       if (target.closest('[data-no-deselect]')) return;
       setSelectedElementId(null);
       setSelectedRegion(null);
@@ -195,20 +195,27 @@ export default function StudioApp() {
   const handleApplyEnhance = (svgCode: string) => {
     setActiveTool('select');
     if (modals.enhancingRegion) {
-      const center = regionCenter(modals.enhancingRegion);
-      handleAddElement({
-        id: `region-enhanced-${Date.now()}`,
+      const region = modals.enhancingRegion;
+      const center = regionCenter(region);
+      const stamp = Date.now();
+      const { remaining, erasers } = buildRegionReplacementUpdates(currentElements, region, stamp);
+      const maxZ = Math.max(0, ...remaining.map((el) => el.zIndex), ...erasers.map((el) => el.zIndex));
+      const enhancedLayer: CanvasElement = {
+        id: `region-enhanced-${stamp}`,
         type: 'svg_ai',
         name: 'Enhanced Region',
         x: center.x,
         y: center.y,
-        width: modals.enhancingRegion.width,
-        height: modals.enhancingRegion.height,
+        width: region.width,
+        height: region.height,
         rotation: 0,
-        zIndex: currentElements.length + 1,
-        content: svgCode,
+        zIndex: maxZ + 1,
+        content: svgToFillElementBox(svgCode),
         isAiGenerated: true,
-      });
+      };
+
+      updateElementsWithHistory([...remaining, ...erasers, enhancedLayer]);
+      setSelectedElementId(enhancedLayer.id);
       setSelectedRegion(null);
       modals.closeEnhanceModal();
       return;
@@ -217,7 +224,7 @@ export default function StudioApp() {
     handleUpdateElement({
       ...modals.enhancingElement,
       type: 'svg_ai',
-      content: svgCode,
+      content: svgToFillElementBox(svgCode),
       name: `Enhanced: ${modals.enhancingElement.name}`,
       isAiGenerated: true,
     });
@@ -414,7 +421,6 @@ export default function StudioApp() {
                   onDeleteElement={handleDeleteElement}
                   onDuplicateElement={handleDuplicateElement}
                   onReorderElement={handleReorderElement}
-                  onOpenAiRefine={modals.openAiRefine}
                   onOpenAiEnhance={modals.openAiEnhance}
                   onEnhanceRegion={modals.openRegionEnhance}
                   onExtractRegion={handleExtractRegion}
@@ -445,7 +451,6 @@ export default function StudioApp() {
         {currentStep === 'confirm' && savedBundle && (
           <ConfirmationScreen
             bundle={savedBundle}
-            onOpenStoreAssociate={() => modals.setIsStoreAssociateOpen(true)}
             onNewDesign={() => {
               resetHistory([]);
               setCurrentStep('select');
@@ -485,6 +490,11 @@ export default function StudioApp() {
           }
           region={modals.enhancingRegion ?? undefined}
           canvasElements={currentElements}
+          surfaceAspect={
+            selectedJewelry
+              ? getEngravingSurfaceAspect(selectedJewelry.constraints.shape)
+              : 1
+          }
           onApply={handleApplyEnhance}
         />
       )}
@@ -519,12 +529,6 @@ export default function StudioApp() {
         isOpen={modals.isTextModalOpen}
         onClose={() => modals.setIsTextModalOpen(false)}
         onAddText={handleAddTextFromModal}
-      />
-
-      <StoreAssociateDrawer
-        isOpen={modals.isStoreAssociateOpen}
-        onClose={() => modals.setIsStoreAssociateOpen(false)}
-        activeBundle={savedBundle}
       />
     </div>
   );

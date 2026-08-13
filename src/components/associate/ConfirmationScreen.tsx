@@ -6,23 +6,20 @@ import {
   isTerminalFulfillmentStatus,
 } from '../../constants/fulfillmentStatus';
 import {
-  associateTerminalUrl,
   hasAssociateApiAccess,
   lookupAssociateOrder,
 } from '../../services/associateService';
 import { bundleFromOrder } from '../../utils/designBundle';
 import { downloadFile } from '../../utils/svgUtils';
-import { Download, Store, CheckCircle, RefreshCw } from 'lucide-react';
+import { Download, CheckCircle, RefreshCw } from 'lucide-react';
 
 interface ConfirmationScreenProps {
   bundle: SavedDesignBundle;
-  onOpenStoreAssociate: () => void;
   onNewDesign: () => void;
 }
 
 export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
   bundle,
-  onOpenStoreAssociate,
   onNewDesign,
 }) => {
   const [liveBundle, setLiveBundle] = useState(bundle);
@@ -66,8 +63,6 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
     );
   };
 
-  const associateUrl = associateTerminalUrl(liveBundle.designId);
-  const qrSvgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(associateUrl)}`;
   const channel = liveBundle.channel ?? 'pos';
   const statusMeta = getFulfillmentStatusMeta(liveBundle.fulfillmentStatus ?? 'queued', channel);
 
@@ -97,7 +92,7 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
       </div>
 
       <div className="bg-white border border-[#E8E2D5] rounded-3xl p-8 text-[#121214] shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-6 border-b border-[#E8E2D5] pb-6">
+        <div className="border-b border-[#E8E2D5] pb-6">
           <div>
             <span className="text-xs font-mono text-[#C5A059] uppercase tracking-widest font-bold">Order ID</span>
             <div className="font-mono text-lg sm:text-xl font-extrabold text-[#121214] tracking-wider mt-1 break-all">
@@ -107,11 +102,6 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
               Created on {new Date(liveBundle.createdAt).toLocaleDateString()} •{' '}
               {channel === 'pos' ? 'In-Store POS' : 'GIVA App'}
             </p>
-          </div>
-
-          <div className="bg-[#FAF8F5] border border-[#E8E2D5] p-3 rounded-2xl shadow-2xs flex flex-col items-center space-y-1">
-            <img src={qrSvgUrl} alt="Associate terminal QR" className="w-28 h-28 object-contain" />
-            <span className="text-[10px] font-mono text-[#121214] font-bold tracking-wider">SCAN AT ASSOCIATE</span>
           </div>
         </div>
 
@@ -133,33 +123,16 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
 
         <div className="pt-2 flex flex-wrap gap-4">
           <button
-            onClick={onOpenStoreAssociate}
+            onClick={handleDownloadSvg}
             className="flex-1 py-4 px-6 rounded-full bg-[#121214] hover:bg-[#C5A059] text-white font-bold uppercase tracking-[0.15em] text-xs flex items-center justify-center space-x-2 transition-all shadow-md border border-[#121214]"
           >
-            <Store className="w-4 h-4 text-[#C5A059] group-hover:text-white" />
-            <span>Hand Off to Store Associate</span>
-          </button>
-
-          <a
-            href={associateUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="py-4 px-6 rounded-full bg-[#FAF8F5] hover:bg-[#121214] hover:text-[#C5A059] text-[#121214] font-bold text-xs uppercase tracking-wider flex items-center justify-center transition-colors border border-[#E8E2D5]"
-          >
-            Open Associate Terminal
-          </a>
-
-          <button
-            onClick={handleDownloadSvg}
-            className="py-4 px-6 rounded-full bg-[#FAF8F5] hover:bg-[#121214] hover:text-[#C5A059] text-[#121214] font-bold text-xs uppercase tracking-wider flex items-center justify-center space-x-2 transition-colors border border-[#E8E2D5]"
-          >
-            <Download className="w-4 h-4 text-[#C5A059]" />
-            <span>Download Production SVG</span>
+            <Download className="w-4 h-4 text-[#C5A059] group-hover:text-white" />
+            <span>Download Your Art</span>
           </button>
 
           <button
             onClick={onNewDesign}
-            className="py-4 px-6 rounded-full bg-white hover:bg-[#FAF8F5] text-[#6E6A63] hover:text-[#121214] font-bold text-xs uppercase tracking-wider transition-colors border border-[#E8E2D5]"
+            className="py-4 px-6 rounded-full bg-[#FAF8F5] hover:bg-[#121214] hover:text-[#C5A059] text-[#121214] font-bold text-xs uppercase tracking-wider transition-colors border border-[#E8E2D5]"
           >
             Create Another Design
           </button>
