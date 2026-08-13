@@ -1,17 +1,25 @@
-import { CanvasElement, JewelryItem, isErasableLayer } from '../types';
+import { CanvasElement, JewelryItem, JewelryMaterial, isErasableLayer } from '../types';
 
 /** One eraser stroke in the target element's local 0–100 coordinate space. */
-export type EraserStroke = { content: string; strokeWidth: number };
+export type EraserStroke = { content: string; strokeWidth: number; filled?: boolean };
 
 export function eraserStrokesFromElements(erasers: CanvasElement[]): EraserStroke[] {
   return erasers.map((e) => ({
     content: e.content,
     strokeWidth: e.strokeWidth ?? 8,
+    filled: e.eraserFill,
   }));
 }
 
-function eraserStrokePathMarkup(stroke: EraserStroke): string {
+export function eraserMaskPathMarkup(stroke: EraserStroke): string {
+  if (stroke.filled) {
+    return `<path d="${stroke.content}" fill="black" stroke="none"/>`;
+  }
   return `<path d="${stroke.content}" fill="none" stroke="black" stroke-width="${stroke.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+}
+
+function eraserStrokePathMarkup(stroke: EraserStroke): string {
+  return eraserMaskPathMarkup(stroke);
 }
 
 /**
@@ -128,16 +136,81 @@ export function buildFreehandSessionData(
 }
 
 /**
- * Combines all canvas elements into a single clean, production-ready vector SVG file.
+ * Fit canvas artwork into an element box using the same layout as the live
+ * canvas (centered rect with meet) — NOT a uniform scale() which skews AI art.
  */
-export function generateCompositeSvg(elements: CanvasElement[], jewelry: JewelryItem): string {
-  // Eraser layers never render themselves — they exist only to punch masked
-  // holes into whichever element they target, so the original artwork stays
-  // fully intact underneath (deleting the eraser layer instantly restores it).
+export function embedArtworkMarkup(
+  el: CanvasElement,
+  rotation: string,
+  maskAttr: string
+): string {
+  const trimmed = el.content.trim();
+  const viewBoxMatch = trimmed.match(/viewBox=["']([^"']+)["']/i);
+  const viewBox = viewBoxMatch?.[1] ?? '0 0 100 100';
+
+  let inner: string;
+  if (trimmed.startsWith('<svg')) {
+    const match = trimmed.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+    inner = match ? match[1] : trimmed;
+  } else {
+    inner = trimmed;
+  }
+
+  const halfW = (el.width / 2).toFixed(2);
+  const halfH = (el.height / 2).toFixed(2);
+
+  const artwork = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" x="${-halfW}" y="${-halfH}" width="${el.width}" height="${el.height}" preserveAspectRatio="xMidYMid meet">${inner}</svg>`;
+
+  return `\n  <g transform="translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation})">\n    <g${maskAttr}>\n    ${artwork}\n    </g>\n  </g>`;
+}
+
+export function normalizeEmbeddedArtworkSvg(content: string): string {
+  const trimmed = content.trim();
+  const viewBoxMatch = trimmed.match(/viewBox=["']([^"']+)["']/i);
+  const viewBox = viewBoxMatch?.[1] ?? '0 0 100 100';
+
+  let inner: string;
+  if (trimmed.startsWith('<svg')) {
+    const match = trimmed.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+    inner = match ? match[1] : trimmed;
+  } else {
+    inner = trimmed;
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid meet">${inner}</svg>`;
+}
+
+export function isRasterArtwork(content: string): boolean {
+  return /<image[\s/>]/i.test(content);
+}
+
+/** Force SVG artwork to fill its element box (used when applying a region enhance). */
+export function svgToFillElementBox(svgCode: string): string {
+  const trimmed = svgCode.trim();
+  if (!trimmed.startsWith('<svg')) return svgCode;
+  return trimmed
+    .replace(/\s+preserveAspectRatio="[^"]*"/i, '')
+    .replace(/<svg\b/i, '<svg preserveAspectRatio="none"');
+}
+
+/** Pull an embedded PNG/JPEG data URL out of SVG artwork (common for AI enhance results). */
+export function extractEmbeddedRasterDataUrl(content: string): string | null {
+  const match = content.match(/(?:href|xlink:href)=["'](data:image\/[^"']+)["']/i);
+  return match?.[1] ?? null;
+}
+
+interface CompositeLayers {
+  maskDefs: string;
+  vectorContent: string;
+  rasterContent: string;
+}
+
+function buildCompositeLayers(elements: CanvasElement[], _jewelry: JewelryItem): CompositeLayers {
   const sorted = [...elements].filter((el) => el.type !== 'eraser').sort((a, b) => a.zIndex - b.zIndex);
   const erasers = elements.filter((el) => el.type === 'eraser');
 
-  let elementsContent = '';
+  let vectorContent = '';
+  let rasterContent = '';
   let maskDefs = '';
 
   for (const el of sorted) {
@@ -145,45 +218,47 @@ export function generateCompositeSvg(elements: CanvasElement[], jewelry: Jewelry
     const sy = el.height / 100;
     const rotation = el.rotation.toFixed(2);
 
-    // Any eraser strokes targeting this element get baked into a per-element
-    // <mask> so the exported production vector matches exactly what the
-    // customer saw while erasing on the live canvas.
     const relatedErasers = erasers.filter((e) => e.targetElementId === el.id);
     let maskAttr = '';
     if (isErasableLayer(el.type) && relatedErasers.length > 0) {
       const maskId = `erase-mask-${el.id}`;
-      const strokes = relatedErasers
-        .map(
-          (e) =>
-            `<path d="${e.content}" fill="none" stroke="black" stroke-width="${e.strokeWidth ?? 8}" stroke-linecap="round" stroke-linejoin="round" />`
-        )
-        .join('\n      ');
+      const strokes = relatedErasers.map((e) => eraserMaskPathMarkup({
+        content: e.content,
+        strokeWidth: e.strokeWidth ?? 8,
+        filled: e.eraserFill,
+      })).join('\n      ');
       maskDefs += `\n    <mask id="${maskId}" maskContentUnits="userSpaceOnUse">\n      <rect x="0" y="0" width="100" height="100" fill="white" />\n      ${strokes}\n    </mask>`;
       maskAttr = ` mask="url(#${maskId})"`;
     }
 
-    if (el.type === 'svg_ai' || el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
-      const shiftX = (-50 * sx).toFixed(3);
-      const shiftY = (-50 * sy).toFixed(3);
-      const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) translate(${shiftX}, ${shiftY}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
+    const shiftX = (-50 * sx).toFixed(3);
+    const shiftY = (-50 * sy).toFixed(3);
+    const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) translate(${shiftX}, ${shiftY}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
 
-      if (el.type === 'svg_ai') {
-        let svgBody = el.content;
-        // Extract inner contents of <svg>...</svg>
-        const match = svgBody.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
-        const inner = match ? match[1] : svgBody;
-        elementsContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    ${inner}\n    </g>\n  </g>`;
+    if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
+      const markup = embedArtworkMarkup(el, rotation, maskAttr);
+      if (isRasterArtwork(el.content)) {
+        rasterContent += markup;
       } else {
-        elementsContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${el.content}" fill="none" stroke="#111111" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" />\n    </g>\n  </g>`;
+        vectorContent += markup;
       }
+    } else if (el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
+      vectorContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${el.content}" fill="none" stroke="#111111" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" />\n    </g>\n  </g>`;
     } else if (el.type === 'text') {
-      // Text is never erasable — render without any eraser mask.
-      const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
-      elementsContent += `\n  <g transform="${transform}">\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n  </g>`;
+      vectorContent += `\n  <g transform="${transform}">\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n  </g>`;
     }
   }
 
-  const composite = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none">
+  return { maskDefs, vectorContent, rasterContent };
+}
+
+/**
+ * Combines all canvas elements into a single clean, production-ready vector SVG file.
+ */
+export function generateCompositeSvg(elements: CanvasElement[], jewelry: JewelryItem): string {
+  const { maskDefs, vectorContent, rasterContent } = buildCompositeLayers(elements, jewelry);
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none" overflow="visible">
   <desc>GIVA Live-Engrave Production Vector Export - SKU: ${jewelry.sku} - Safe Area: ${jewelry.constraints.safeWidthMm}mm x ${jewelry.constraints.safeHeightMm}mm</desc>
   <defs>${maskDefs}
   </defs>
@@ -191,11 +266,102 @@ export function generateCompositeSvg(elements: CanvasElement[], jewelry: Jewelry
     path, circle, rect, polygon, text { vector-effect: non-scaling-stroke; }
   </style>
   <g id="production-engraving-layer" fill="none" stroke="#111111">
-    ${elementsContent}
+    ${vectorContent}${rasterContent}
   </g>
 </svg>`;
+}
 
-  return composite;
+/** Preview-only palette — laser etch reads as matte charcoal/brown, never flat black. */
+interface EtchPalette {
+  groove: string;
+  shadow: string;
+  highlight: string;
+}
+
+function getEtchPalette(material: JewelryMaterial): EtchPalette {
+  switch (material) {
+    case '18k_gold':
+      return { groove: '#5a4528', shadow: '#2e2214', highlight: '#f5e6c8' };
+    case 'rose_gold':
+      return { groove: '#5a3f38', shadow: '#352520', highlight: '#fde8e0' };
+    case 'platinum':
+      return { groove: '#454b54', shadow: '#252930', highlight: '#f0f2f5' };
+    case 'silver':
+    default:
+      return { groove: '#434b53', shadow: '#23282d', highlight: '#eef2f6' };
+  }
+}
+
+/** SVG filter simulating recessed laser grooves with inner shadow + edge highlight. */
+function buildLaserEtchFilter(id: string, palette: EtchPalette): string {
+  return `
+    <filter id="${id}" filterUnits="objectBoundingBox" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+      <feOffset in="SourceAlpha" dx="0.008" dy="0.01" result="offShadow"/>
+      <feGaussianBlur in="offShadow" stdDeviation="0.006" result="blurShadow"/>
+      <feFlood flood-color="${palette.shadow}" flood-opacity="0.55" result="shadowColor"/>
+      <feComposite in="shadowColor" in2="blurShadow" operator="in" result="innerShadow"/>
+
+      <feOffset in="SourceAlpha" dx="-0.006" dy="-0.008" result="offHi"/>
+      <feGaussianBlur in="offHi" stdDeviation="0.004" result="blurHi"/>
+      <feFlood flood-color="${palette.highlight}" flood-opacity="0.32" result="hiColor"/>
+      <feComposite in="hiColor" in2="blurHi" operator="in" result="innerHi"/>
+
+      <feFlood flood-color="${palette.groove}" flood-opacity="0.9" result="grooveColor"/>
+      <feComposite in="grooveColor" in2="SourceAlpha" operator="in" result="groove"/>
+      <feGaussianBlur in="groove" stdDeviation="0.003" result="softGroove"/>
+
+      <feMerge>
+        <feMergeNode in="innerShadow"/>
+        <feMergeNode in="softGroove"/>
+        <feMergeNode in="innerHi"/>
+      </feMerge>
+    </filter>`;
+}
+
+/** Darken/desaturate raster AI artwork so it reads as a laser mark, not a sticker. */
+function buildRasterEtchFilter(id: string, palette: EtchPalette): string {
+  return `
+    <filter id="${id}" filterUnits="objectBoundingBox" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+      <feColorMatrix in="SourceGraphic" type="matrix"
+        values="0.34 0.34 0.34 0 0.05
+                0.30 0.30 0.30 0 0.04
+                0.26 0.26 0.26 0 0.03
+                0    0    0    0.92 0" result="etched"/>
+      <feGaussianBlur in="etched" stdDeviation="0.08" result="softEtched"/>
+      <feMerge>
+        <feMergeNode in="softEtched"/>
+      </feMerge>
+    </filter>`;
+}
+
+/**
+ * Preview-only composite SVG — same geometry as production export but with a
+ * laser-etch filter so artwork reads as recessed oxidized grooves in metal,
+ * not flat black ink on the surface.
+ */
+export function generatePreviewCompositeSvg(elements: CanvasElement[], jewelry: JewelryItem): string {
+  const { maskDefs, vectorContent, rasterContent } = buildCompositeLayers(elements, jewelry);
+  const palette = getEtchPalette(jewelry.material);
+  const vectorFilter = buildLaserEtchFilter('preview-laser-etch', palette);
+  const rasterFilter = buildRasterEtchFilter('preview-raster-etch', palette);
+
+  const vectorLayer = vectorContent
+    ? `\n  <g filter="url(#preview-laser-etch)" fill="none" stroke="#111111">${vectorContent}\n  </g>`
+    : '';
+  const rasterLayer = rasterContent
+    ? `\n  <g filter="url(#preview-raster-etch)">${rasterContent}\n  </g>`
+    : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none" overflow="visible">
+  <desc>GIVA Live-Engrave Preview Simulation - SKU: ${jewelry.sku}</desc>
+  <defs>${maskDefs}${vectorFilter}${rasterFilter}
+  </defs>
+  <style>
+    path, circle, rect, polygon, text { vector-effect: non-scaling-stroke; }
+  </style>
+  <g id="production-engraving-layer">${vectorLayer}${rasterLayer}
+  </g>
+</svg>`;
 }
 
 /**

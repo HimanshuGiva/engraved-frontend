@@ -1,11 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CanvasElement, CanvasRegion, JewelryItem, isErasableLayer } from '../../types';
-import { ToolMode } from '../../constants/tools';
+import { ENGRAVING_SURFACE_CLASS } from '../../constants/engravingSurface';
 import { getFontClass } from '../../constants/fonts';
 import { pointsToSvgPath, buildEraserMaskDataUri, buildFreehandSessionData, eraserStrokesFromElements, EraserStroke, canvasPointsToLocalSubpaths, subpathsToSvgPath } from '../../utils/svgUtils';
 import { normalizeCanvasRegion } from '../../utils/canvasCapture';
 import { SHAPE_PRESETS, SHAPE_LABELS } from '../../constants/shapes';
-import { Sparkles, Pencil, Upload } from 'lucide-react';
+import { ToolMode } from '../../constants/tools';
 
 interface CanvasWorkspaceProps {
   jewelry: JewelryItem;
@@ -57,23 +57,27 @@ const ERASER_CURSOR =
   ) +
   '") 5 19, crosshair';
 
-/** Inline SVG mask: white = visible, black strokes = punched-out holes. */
+/** Inline SVG mask: white = visible, black strokes/fills = punched-out holes. */
 function EraserMaskDef({ maskId, strokes }: { maskId: string; strokes: EraserStroke[] }) {
   return (
     <mask id={maskId} maskContentUnits="userSpaceOnUse">
       <rect x="0" y="0" width="100" height="100" fill="white" />
-      {strokes.map((stroke, i) => (
-        <path
-          key={i}
-          d={stroke.content}
-          fill="none"
-          stroke="black"
-          strokeWidth={stroke.strokeWidth}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
+      {strokes.map((stroke, i) =>
+        stroke.filled ? (
+          <path key={i} d={stroke.content} fill="black" stroke="none" />
+        ) : (
+          <path
+            key={i}
+            d={stroke.content}
+            fill="none"
+            stroke="black"
+            strokeWidth={stroke.strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        )
+      )}
     </mask>
   );
 }
@@ -231,24 +235,59 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       ? normalizeCanvasRegion(shapeAnchor.x, shapeAnchor.y, shapeCursor.x, shapeCursor.y)
       : null;
 
-  useEffect(() => {
-    if (activeTool !== 'select') {
-      setIsSelectingRegion(false);
-      setRegionAnchor(null);
-      setRegionCursor(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTool]);
-
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const SELECT_DRAG_THRESHOLD_PX = 4;
+  const selectGestureRef = useRef<{
+    mode: 'pending' | 'region' | 'move';
+    startClientX: number;
+    startClientY: number;
+    hitElementId: string | null;
+  } | null>(null);
 
   const pointInElementBounds = (px: number, py: number, el: CanvasElement) => {
     const local = toLocalPercent(px, py, el);
     return local.x >= 0 && local.x <= 100 && local.y >= 0 && local.y <= 100;
   };
+
+  const hitTestElement = (px: number, py: number): CanvasElement | null => {
+    const candidates = elements
+      .filter((el) => el.type !== 'eraser')
+      .sort((a, b) => b.zIndex - a.zIndex);
+    return candidates.find((el) => pointInElementBounds(px, py, el)) ?? null;
+  };
+
+  const beginElementDrag = (el: CanvasElement, clientX: number, clientY: number) => {
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const mouseXPct = ((clientX - rect.left) / rect.width) * 100;
+    const mouseYPct = ((clientY - rect.top) / rect.height) * 100;
+
+    setDraggingId(el.id);
+    dragStartPosRef.current = { x: el.x, y: el.y };
+    setDragPosition({ x: el.x, y: el.y });
+    setDragOffset({
+      x: mouseXPct - el.x,
+      y: mouseYPct - el.y,
+    });
+  };
+
+  const clearSelectGesture = () => {
+    selectGestureRef.current = null;
+    setIsSelectingRegion(false);
+    setRegionAnchor(null);
+    setRegionCursor(null);
+  };
+
+  useEffect(() => {
+    if (activeTool !== 'select') {
+      clearSelectGesture();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool]);
 
   const beginEraseStroke = (clientX: number, clientY: number, pointerId: number) => {
     try {
@@ -324,24 +363,8 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     setDraggingId(null);
   };
 
-  // Get SVG clip path shape style for the selected SKU - Large immersive dimensions
-  const getShapeStyle = () => {
-    switch (jewelry.constraints.shape) {
-      case 'circle':
-        return 'w-72 h-72 sm:w-[420px] sm:h-[420px] rounded-full';
-      case 'squircle':
-        return 'w-72 h-72 sm:w-[420px] sm:h-[420px] rounded-[28%]';
-      case 'bar':
-        return 'w-40 h-80 sm:w-52 sm:h-[460px] rounded-2xl';
-      case 'heart':
-        return 'w-72 h-72 sm:w-[420px] sm:h-[420px] rounded-[30%]';
-      case 'oval':
-        return 'w-64 h-80 sm:w-72 sm:h-[440px] rounded-[50%]';
-      case 'rectangle':
-      default:
-        return 'w-72 h-72 sm:w-[420px] sm:h-[420px] rounded-2xl';
-    }
-  };
+  // Engraving surface dimensions — shared with preview so layout matches 1:1
+  const getShapeStyle = () => ENGRAVING_SURFACE_CLASS[jewelry.constraints.shape];
 
   // Freehand Drawing pointer events
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -360,7 +383,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       setShapeCursor(point);
       return;
     }
-    if (activeTool === 'select' && e.target === containerRef.current) {
+    if (activeTool === 'select') {
       try {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       } catch {}
@@ -368,8 +391,13 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       const point = pointerToCanvasPercent(e.clientX, e.clientY);
       if (!point) return;
 
-      onSelectElement(null);
-      setIsSelectingRegion(true);
+      const hit = hitTestElement(point.x, point.y);
+      selectGestureRef.current = {
+        mode: 'pending',
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        hitElementId: hit?.id ?? null,
+      };
       setRegionAnchor(point);
       setRegionCursor(point);
       return;
@@ -415,10 +443,41 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       if (point) setShapeCursor(point);
       return;
     }
-    if (activeTool === 'select' && isSelectingRegion) {
-      const point = pointerToCanvasPercent(e.clientX, e.clientY);
-      if (point) setRegionCursor(point);
-      return;
+
+    if (activeTool === 'select' && selectGestureRef.current) {
+      const gesture = selectGestureRef.current;
+
+      if (gesture.mode === 'pending') {
+        const dx = e.clientX - gesture.startClientX;
+        const dy = e.clientY - gesture.startClientY;
+        if (Math.hypot(dx, dy) >= SELECT_DRAG_THRESHOLD_PX) {
+          const movingSelected =
+            gesture.hitElementId !== null && gesture.hitElementId === selectedElementId;
+          if (movingSelected) {
+            gesture.mode = 'move';
+            const el = elements.find((item) => item.id === gesture.hitElementId);
+            if (el) {
+              onRegionSelect(null);
+              beginElementDrag(el, e.clientX, e.clientY);
+            }
+          } else {
+            gesture.mode = 'region';
+            onSelectElement(null);
+            onRegionSelect(null);
+            setIsSelectingRegion(true);
+          }
+        }
+      }
+
+      if (gesture.mode === 'region' || isSelectingRegion) {
+        const point = pointerToCanvasPercent(e.clientX, e.clientY);
+        if (point) setRegionCursor(point);
+        return;
+      }
+
+      if (gesture.mode === 'pending') {
+        return;
+      }
     }
 
     if (activeTool === 'draw' && isDrawingFreehand) {
@@ -505,17 +564,33 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       onSelectTool?.('select');
     }
 
-    if (activeTool === 'select' && isSelectingRegion && regionAnchor && regionCursor) {
-      const region = normalizeCanvasRegion(
-        regionAnchor.x,
-        regionAnchor.y,
-        regionCursor.x,
-        regionCursor.y
-      );
-      onRegionSelect(region);
-      setIsSelectingRegion(false);
-      setRegionAnchor(null);
-      setRegionCursor(null);
+    if (activeTool === 'select' && selectGestureRef.current) {
+      const gesture = selectGestureRef.current;
+
+      if (gesture.mode === 'region' && regionAnchor && regionCursor) {
+        const region = normalizeCanvasRegion(
+          regionAnchor.x,
+          regionAnchor.y,
+          regionCursor.x,
+          regionCursor.y
+        );
+        onRegionSelect(region);
+      } else if (gesture.mode === 'move') {
+        if (draggingId) {
+          commitDrag();
+          setDraggingId(null);
+        }
+      } else if (gesture.mode === 'pending') {
+        if (gesture.hitElementId) {
+          onRegionSelect(null);
+          onSelectElement(gesture.hitElementId);
+        } else {
+          onSelectElement(null);
+          onRegionSelect(null);
+        }
+      }
+
+      clearSelectGesture();
     } else if (activeTool === 'draw' && isDrawingFreehand) {
       setIsDrawingFreehand(false);
       if (currentDrawPoints.length > 1) {
@@ -580,13 +655,20 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       endEraseStroke();
     }
 
-    if (draggingId) {
+    if (draggingId && activeTool !== 'select') {
       commitDrag();
     }
     setDraggingId(null);
   };
 
   const handlePointerCancel = () => {
+    if (selectGestureRef.current) {
+      if (draggingId) {
+        cancelDrag();
+      }
+      clearSelectGesture();
+      return;
+    }
     if (isSelectingRegion) {
       setIsSelectingRegion(false);
       setRegionAnchor(null);
@@ -603,6 +685,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   };
 
   const handleLostPointerCapture = () => {
+    if (selectGestureRef.current) {
+      handlePointerUp();
+      return;
+    }
     if (isSelectingRegion) {
       handlePointerUp();
       return;
@@ -615,28 +701,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     if (activeTool === 'draw' || activeTool === 'erase') {
       handlePointerUp();
     }
-  };
-
-  const startDragging = (e: React.PointerEvent | React.MouseEvent, el: CanvasElement) => {
-    if (activeTool !== 'select') return;
-    e.stopPropagation();
-    onRegionSelect(null);
-    onSelectElement(el.id);
-
-    const container = containerRef.current;
-    if (!container) return;
-    const rect = container.getBoundingClientRect();
-
-    const mouseXPct = ((e.clientX - rect.left) / rect.width) * 100;
-    const mouseYPct = ((e.clientY - rect.top) / rect.height) * 100;
-
-    setDraggingId(el.id);
-    dragStartPosRef.current = { x: el.x, y: el.y };
-    setDragPosition({ x: el.x, y: el.y });
-    setDragOffset({
-      x: mouseXPct - el.x,
-      y: mouseYPct - el.y,
-    });
   };
 
   return (
@@ -668,7 +732,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
             onPointerCancel={handlePointerCancel}
             onLostPointerCapture={handleLostPointerCapture}
             className={`relative bg-[#FAF8F5] border-2 border-[#E8E2D5] shadow-inner overflow-hidden select-none touch-none transition-all flex-shrink-0 ${
-              activeTool === 'draw' || activeTool === 'shape'
+              activeTool === 'draw' || activeTool === 'shape' || activeTool === 'select'
                 ? 'cursor-crosshair'
                 : activeTool === 'erase'
                 ? ''
@@ -763,12 +827,6 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                 <div
                   key={el.id}
                   data-canvas-element
-                  onPointerDown={(e) => startDragging(e, el)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (isDrawingFreehand || activeTool === 'erase' || activeTool === 'shape') return;
-                    onSelectElement(el.id);
-                  }}
                   style={{
                     position: 'absolute',
                     left: `${displayX}%`,
@@ -777,7 +835,13 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                     height: `${el.height}%`,
                     transform: `translate(-50%, -50%) rotate(${el.rotation}deg)`,
                     zIndex: el.zIndex,
-                    pointerEvents: activeTool === 'draw' || activeTool === 'erase' || activeTool === 'shape' ? 'none' : undefined,
+                    pointerEvents:
+                      activeTool === 'draw' ||
+                      activeTool === 'erase' ||
+                      activeTool === 'shape' ||
+                      activeTool === 'select'
+                        ? 'none'
+                        : undefined,
                     cursor: activeTool === 'erase' ? ERASER_CURSOR : undefined,
                   }}
                   className={`group absolute transition-shadow ${

@@ -8,6 +8,7 @@ import {
   defaultEnhanceOptions,
   toggleEnhanceOption,
 } from '../../constants/enhanceOptions';
+import { canvasBoxPixelAspect } from '../../constants/engravingSurface';
 import {
   captureElementAsPngDataUrl,
   captureRegionAsPngDataUrl,
@@ -21,6 +22,7 @@ interface AiEnhanceModalProps {
   eraserLayers?: CanvasElement[];
   region?: CanvasRegion;
   canvasElements?: CanvasElement[];
+  surfaceAspect?: number;
   onApply: (svgCode: string) => void;
 }
 
@@ -32,6 +34,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
   eraserLayers = [],
   region,
   canvasElements = [],
+  surfaceAspect = 1,
   onApply,
 }) => {
   const isRegionMode = Boolean(region);
@@ -58,7 +61,7 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
     const capturePreview = async () => {
       try {
         if (isRegionMode && region) {
-          const url = await captureRegionAsPngDataUrl(canvasElements, region);
+          const url = await captureRegionAsPngDataUrl(canvasElements, region, surfaceAspect);
           if (!cancelled) setPreviewDataUrl(url);
         } else if (element) {
           const url = await captureElementAsPngDataUrl(element, eraserLayers);
@@ -74,13 +77,25 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, element, eraserLayers, region, canvasElements, isRegionMode]);
+  }, [isOpen, element, eraserLayers, region, canvasElements, surfaceAspect, isRegionMode]);
+
+  const previewAspect =
+    isRegionMode && region
+      ? canvasBoxPixelAspect(region.width, region.height, surfaceAspect)
+      : element
+        ? canvasBoxPixelAspect(element.width, element.height, surfaceAspect)
+        : 1;
+  const previewFrameStyle: React.CSSProperties = {
+    aspectRatio: `${previewAspect}`,
+    width: `min(100%, calc(11rem * ${previewAspect}))`,
+    maxHeight: '11rem',
+  };
 
   if (!isOpen) return null;
 
   const captureForEnhance = async (): Promise<string> => {
     if (isRegionMode && region) {
-      return captureRegionAsPngDataUrl(canvasElements, region);
+      return captureRegionAsPngDataUrl(canvasElements, region, surfaceAspect);
     }
     if (element) {
       return captureElementAsPngDataUrl(element, eraserLayers);
@@ -138,28 +153,40 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A857C]">Before</span>
-            <div className="h-36 bg-[#FAF8F5] rounded-xl border border-[#E8E2D5] flex items-center justify-center overflow-hidden">
+        <div className="grid grid-cols-2 gap-3 items-start">
+          <div className="space-y-1.5 min-w-0 flex flex-col items-center">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A857C] self-start">Before</span>
+            <div
+              className="bg-[#FAF8F5] rounded-xl border border-[#E8E2D5] flex items-center justify-center overflow-hidden p-1.5"
+              style={previewFrameStyle}
+            >
               {previewDataUrl ? (
-                <img src={previewDataUrl} alt="Original" className="max-w-full max-h-full object-contain" />
+                <img
+                  src={previewDataUrl}
+                  alt="Original"
+                  className="w-full h-full min-w-0 min-h-0 object-contain"
+                />
+              ) : errorMessage ? (
+                <span className="text-[10px] text-rose-700 text-center px-2">{errorMessage}</span>
               ) : (
                 <div className="w-6 h-6 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
               )}
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A857C]">Enhanced</span>
-            <div className="h-36 bg-[#FAF8F5] rounded-xl border border-[#E8E2D5] flex items-center justify-center overflow-hidden">
+          <div className="space-y-1.5 min-w-0 flex flex-col items-center">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8A857C] self-start">Enhanced</span>
+            <div
+              className="bg-[#FAF8F5] rounded-xl border border-[#E8E2D5] flex items-center justify-center overflow-hidden p-1.5"
+              style={previewFrameStyle}
+            >
               {isLoading ? (
                 <div className="w-6 h-6 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
               ) : resultPreviewUrl ? (
                 <img
                   src={resultPreviewUrl}
                   alt="Enhanced preview"
-                  className="max-w-full max-h-full w-full h-full object-contain p-3"
+                  className="w-full h-full min-w-0 min-h-0 object-contain"
                 />
               ) : (
                 <span className="text-[10px] text-[#8A857C] text-center px-2">Run enhance to preview</span>

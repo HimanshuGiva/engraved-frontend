@@ -14,7 +14,7 @@ import { ApiError } from '../services/apiClient';
 import { bundleFromOrder } from '../utils/designBundle';
 import { parseAssociateOrderId } from '../utils/routing';
 import { AssociateOrderPanel } from '../components/associate/AssociateOrderPanel';
-import { QrCode, RefreshCw, Radio, ListOrdered } from 'lucide-react';
+import { Search, RefreshCw, Radio, ListOrdered } from 'lucide-react';
 
 export const AssociateTerminal: React.FC = () => {
   const initialOrderId = parseAssociateOrderId(window.location.search) ?? '';
@@ -62,7 +62,7 @@ export const AssociateTerminal: React.FC = () => {
     }
   }, []);
 
-  const handleLookup = useCallback(
+  const handleSearch = useCallback(
     async (orderId: string) => {
       if (!orderId.trim()) return;
       setIsSearching(true);
@@ -99,9 +99,9 @@ export const AssociateTerminal: React.FC = () => {
 
   useEffect(() => {
     if (initialOrderId) {
-      void handleLookup(initialOrderId);
+      void handleSearch(initialOrderId);
     }
-  }, [initialOrderId, handleLookup]);
+  }, [initialOrderId, handleSearch]);
 
   useEffect(() => {
     const orderId = activeBundle?.designId;
@@ -129,11 +129,11 @@ export const AssociateTerminal: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-[#121214] text-[#C5A059] flex items-center justify-center">
-              <QrCode className="w-4 h-4" />
+              <Search className="w-4 h-4" />
             </div>
             <div>
               <h1 className="font-serif text-lg font-bold">GIVA Store Associate Terminal</h1>
-              <p className="text-[#6E6A63] text-xs">Laser queue monitor & order lookup</p>
+              <p className="text-[#6E6A63] text-xs">Laser queue monitor & order search</p>
             </div>
           </div>
 
@@ -229,7 +229,7 @@ export const AssociateTerminal: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setSearchId(order.id);
-                        void handleLookup(order.id);
+                        void handleSearch(order.id);
                       }}
                       className="w-full text-left bg-[#FAF8F5] hover:bg-[#121214] hover:text-white border border-[#E8E2D5] rounded-xl px-3 py-2 transition-colors group"
                     >
@@ -249,24 +249,24 @@ export const AssociateTerminal: React.FC = () => {
         <section className="space-y-4">
           <div className="bg-white border border-[#E8E2D5] rounded-2xl p-4 space-y-2">
             <label className="text-[10px] font-mono text-[#8A857C] font-bold uppercase tracking-wider">
-              Lookup order ID
+              Search order ID
             </label>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={searchId}
                 onChange={(e) => setSearchId(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && void handleLookup(searchId)}
-                placeholder="Paste order UUID from confirmation QR"
+                onKeyDown={(e) => e.key === 'Enter' && void handleSearch(searchId)}
+                placeholder="Enter order ID"
                 className="flex-1 bg-[#FAF8F5] border border-[#E8E2D5] rounded-xl px-4 py-2.5 text-xs font-mono focus:border-[#C5A059] focus:outline-none"
               />
               <button
                 type="button"
-                onClick={() => void handleLookup(searchId)}
+                onClick={() => void handleSearch(searchId)}
                 disabled={isSearching}
                 className="px-5 py-2.5 bg-[#121214] text-white font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-[#C5A059] transition-colors disabled:opacity-50"
               >
-                {isSearching ? 'Searching…' : 'Lookup'}
+                {isSearching ? 'Searching…' : 'Search'}
               </button>
             </div>
             {searchError && <p className="text-rose-600 text-xs font-medium">{searchError}</p>}
@@ -279,7 +279,7 @@ export const AssociateTerminal: React.FC = () => {
             />
           ) : (
             <div className="py-16 text-center text-xs text-[#8A857C] bg-white rounded-2xl border border-dashed border-[#E8E2D5] p-6 space-y-2">
-              <p>Scan the customer confirmation QR or enter an order ID to inspect laser parameters and live status.</p>
+              <p>Search for an order ID to inspect laser parameters and live status, or pick one from the queue on the left.</p>
               <p className="text-[#C5A059] font-mono">/associate?order=&lt;uuid&gt;</p>
             </div>
           )}

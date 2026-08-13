@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CanvasElement, CanvasRegion, visibleLayers } from '../../types';
 import {
-  Sparkles,
   RotateCw,
   Maximize2,
   Layers,
@@ -29,7 +28,6 @@ interface PropertiesPanelProps {
   onDeleteElement: (id: string) => void;
   onDuplicateElement: (id: string) => void;
   onReorderElement: (id: string, direction: 'front' | 'back') => void;
-  onOpenAiRefine: (element: CanvasElement) => void;
   onOpenAiEnhance: (element: CanvasElement) => void;
   onEnhanceRegion: (region: CanvasRegion) => void;
   onExtractRegion: (region: CanvasRegion) => void;
@@ -47,7 +45,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onDeleteElement,
   onDuplicateElement,
   onReorderElement,
-  onOpenAiRefine,
   onOpenAiEnhance,
   onEnhanceRegion,
   onExtractRegion,
@@ -77,51 +74,37 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     <div className="bg-white rounded-3xl p-6 border border-[#E8E2D5] text-[#121214] space-y-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
       
       {/* Panel Tab Header */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-[#E8E2D5] pb-3.5">
-        <div className="flex items-center space-x-2">
+      <div className="flex items-center gap-2 border-b border-[#E8E2D5] pb-3.5">
+        <button
+          onClick={() => setActiveTab('properties')}
+          className={`px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${
+            activeTab === 'properties'
+              ? 'bg-[#121214] text-[#C5A059] shadow-2xs'
+              : 'bg-[#FAF8F5] text-[#6E6A63] hover:text-[#121214]'
+          }`}
+        >
+          Properties
+        </button>
+        <button
+          onClick={() => setActiveTab('layers')}
+          className={`px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-1.5 ${
+            activeTab === 'layers'
+              ? 'bg-[#121214] text-[#C5A059] shadow-2xs'
+              : 'bg-[#FAF8F5] text-[#6E6A63] hover:text-[#121214]'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5 text-[#C5A059]" />
+          <span>Layers ({layers.length})</span>
+        </button>
+        {selectedElement && isEnhanceableElement(selectedElement) && !selectedRegion && (
           <button
-            onClick={() => setActiveTab('properties')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${
-              activeTab === 'properties'
-                ? 'bg-[#121214] text-[#C5A059] shadow-2xs'
-                : 'bg-[#FAF8F5] text-[#6E6A63] hover:text-[#121214]'
-            }`}
+            onClick={() => onOpenAiEnhance(selectedElement)}
+            className="px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-1.5 bg-[#121214] text-[#C5A059] border border-[#C5A059]/40 hover:bg-[#C5A059] hover:text-white"
           >
-            Properties
+            <Wand2 className="w-3.5 h-3.5" />
+            <span>Enhance</span>
           </button>
-          <button
-            onClick={() => setActiveTab('layers')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-1.5 ${
-              activeTab === 'layers'
-                ? 'bg-[#121214] text-[#C5A059] shadow-2xs'
-                : 'bg-[#FAF8F5] text-[#6E6A63] hover:text-[#121214]'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5 text-[#C5A059]" />
-            <span>Layers ({layers.length})</span>
-          </button>
-        </div>
-
-        <div className="flex items-center space-x-1.5">
-          {selectedElement?.isAiGenerated && activeTab === 'properties' && (
-            <button
-              onClick={() => onOpenAiRefine(selectedElement)}
-              className="px-3 py-1 rounded-full bg-[#FBF8F1] text-[#C5A059] border border-[#E6C687]/50 text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1 hover:bg-[#F7F4EE] transition-colors"
-            >
-              <Sparkles className="w-3 h-3 text-[#C5A059]" />
-              <span>Refine AI</span>
-            </button>
-          )}
-          {selectedElement && isEnhanceableElement(selectedElement) && activeTab === 'properties' && (
-            <button
-              onClick={() => onOpenAiEnhance(selectedElement)}
-              className="px-3 py-1 rounded-full bg-[#121214] text-[#C5A059] border border-[#C5A059]/40 text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1 hover:bg-[#C5A059] hover:text-white transition-colors"
-            >
-              <Wand2 className="w-3 h-3" />
-              <span>Enhance</span>
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Tab Content: Canvas Layers List */}

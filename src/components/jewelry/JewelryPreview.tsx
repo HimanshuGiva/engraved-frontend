@@ -1,13 +1,75 @@
 import React, { useState } from 'react';
-import { JewelryItem, CanvasElement, visibleLayers } from '../../types';
-import { generateCompositeSvg } from '../../utils/svgUtils';
-import { Sparkles, ArrowLeft, Check, ZoomIn, RotateCw, ShieldCheck } from 'lucide-react';
+import { JewelryItem, CanvasElement } from '../../types';
+import { generatePreviewCompositeSvg } from '../../utils/svgUtils';
+import { ENGRAVING_SURFACE_RADIUS, getEngravingSurfaceAspect } from '../../constants/engravingSurface';
+
+import { Sparkles, ArrowLeft, Check, ZoomIn, ShieldCheck } from 'lucide-react';
 
 interface JewelryPreviewProps {
   jewelry: JewelryItem;
   elements: CanvasElement[];
   onBackToEdit: () => void;
   onConfirmDesign: () => Promise<void>;
+}
+
+function getMaterialLayers(material: JewelryItem['material']) {
+  switch (material) {
+    case '18k_gold':
+      return {
+        base: 'radial-gradient(ellipse 110% 90% at 50% 58%, #e8c56a 0%, #c9973a 55%, #9a7028 100%)',
+        highlight:
+          'radial-gradient(ellipse 70% 45% at 50% 18%, rgba(255, 248, 220, 0.85) 0%, rgba(255, 248, 220, 0) 72%)',
+        rim: 'rgba(154, 112, 40, 0.35)',
+      };
+    case 'rose_gold':
+      return {
+        base: 'radial-gradient(ellipse 110% 90% at 50% 58%, #e8b0a0 0%, #c98575 55%, #a06858 100%)',
+        highlight:
+          'radial-gradient(ellipse 70% 45% at 50% 18%, rgba(255, 230, 222, 0.8) 0%, rgba(255, 230, 222, 0) 72%)',
+        rim: 'rgba(160, 104, 88, 0.32)',
+      };
+    case 'platinum':
+      return {
+        base: 'radial-gradient(ellipse 110% 90% at 50% 58%, #eceef1 0%, #b8bec6 55%, #8a929c 100%)',
+        highlight:
+          'radial-gradient(ellipse 70% 45% at 50% 18%, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 72%)',
+        rim: 'rgba(100, 108, 118, 0.28)',
+      };
+    case 'silver':
+    default:
+      return {
+        base: 'radial-gradient(ellipse 110% 90% at 50% 58%, #eef2f5 0%, #b8c2cc 55%, #8a98a6 100%)',
+        highlight:
+          'radial-gradient(ellipse 70% 45% at 50% 18%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 72%)',
+        rim: 'rgba(90, 104, 118, 0.3)',
+      };
+  }
+}
+
+function getBailStyle(material: JewelryItem['material']) {
+  switch (material) {
+    case '18k_gold':
+      return {
+        background: 'linear-gradient(180deg, #f0d080 0%, #b8892e 100%)',
+        borderColor: '#a67828',
+      };
+    case 'rose_gold':
+      return {
+        background: 'linear-gradient(180deg, #edb5a5 0%, #b87362 100%)',
+        borderColor: '#a06858',
+      };
+    case 'platinum':
+      return {
+        background: 'linear-gradient(180deg, #e8eaee 0%, #9aa3ad 100%)',
+        borderColor: '#8a929c',
+      };
+    case 'silver':
+    default:
+      return {
+        background: 'linear-gradient(180deg, #e8edf1 0%, #9aaab8 100%)',
+        borderColor: '#8a98a6',
+      };
+  }
 }
 
 export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
@@ -17,76 +79,25 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
   onConfirmDesign,
 }) => {
   const [zoomLevel, setZoomLevel] = useState<number>(1);
-  const [lightingAngle, setLightingAngle] = useState<number>(45);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  const compositeSvg = generateCompositeSvg(elements, jewelry);
-  const displayLayers = visibleLayers(elements);
+  const previewSvg = generatePreviewCompositeSvg(elements, jewelry);
+  const shape = jewelry.constraints.shape;
+  const shapeRadius = ENGRAVING_SURFACE_RADIUS[shape];
+  const surfaceAspect = getEngravingSurfaceAspect(shape);
+  const material = getMaterialLayers(jewelry.material);
+  const bail = getBailStyle(jewelry.material);
 
-  // Metal Material gradient styling for photorealistic jewelry finish
-  const getMaterialGradient = () => {
-    switch (jewelry.material) {
-      case '18k_gold':
-        return 'from-amber-100 via-amber-200 to-amber-400';
-      case 'rose_gold':
-        return 'from-rose-100 via-rose-200 to-rose-300';
-      case 'platinum':
-        return 'from-zinc-100 via-zinc-200 to-zinc-400';
-      case 'silver':
-      default:
-        return 'from-slate-100 via-slate-200 to-slate-400';
-    }
-  };
-
-  const getShapeClasses = () => {
-    switch (jewelry.constraints.shape) {
-      case 'circle':
-        return {
-          outer: 'w-64 h-64 sm:w-72 sm:h-72 rounded-full p-6 sm:p-8',
-          inner: 'rounded-full p-4',
-          lighting: 'rounded-full',
-        };
-      case 'squircle':
-        return {
-          outer: 'w-64 h-64 sm:w-72 sm:h-72 rounded-[28%] p-6 sm:p-8',
-          inner: 'rounded-[22%] p-4',
-          lighting: 'rounded-[22%]',
-        };
-      case 'bar':
-        return {
-          outer: 'w-32 h-72 sm:w-36 sm:h-80 rounded-2xl p-4 sm:p-5',
-          inner: 'rounded-xl p-3',
-          lighting: 'rounded-xl',
-        };
-      case 'rectangle':
-      default:
-        return {
-          outer: 'w-64 h-64 sm:w-72 sm:h-72 rounded-2xl p-6 sm:p-8',
-          inner: 'rounded-xl p-4',
-          lighting: 'rounded-xl',
-        };
-    }
-  };
-
-  const getBailGradient = () => {
-    switch (jewelry.material) {
-      case '18k_gold':
-        return 'from-amber-200 via-amber-300 to-amber-500 border-amber-400';
-      case 'rose_gold':
-        return 'from-rose-200 via-rose-300 to-rose-400 border-rose-300';
-      case 'silver':
-      default:
-        return 'from-slate-200 via-slate-300 to-slate-400 border-slate-300';
-    }
-  };
-
-  const shapeStyle = getShapeClasses();
+  const pendantShadow = `
+    0 28px 56px -16px rgba(0, 0, 0, 0.28),
+    0 8px 20px -8px rgba(0, 0, 0, 0.18),
+    inset 0 1px 1px rgba(255, 255, 255, 0.55),
+    inset 0 -3px 10px rgba(0, 0, 0, 0.14)
+  `;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-8 animate-in fade-in duration-300">
-      
-      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E8E2D5] pb-5">
         <div>
           <div className="inline-flex items-center space-x-1.5 text-xs text-[#C5A059] font-bold uppercase tracking-[0.2em] bg-[#FAF8F5] px-3 py-1 rounded-full border border-[#E8E2D5] mb-2">
@@ -109,83 +120,115 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
-        {/* Realistic Jewelry 3D Simulation Viewer (7 cols) */}
         <div className="lg:col-span-7 bg-white border border-[#E8E2D5] rounded-3xl p-6 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] flex flex-col items-center space-y-6">
-          
-          {/* Controls Bar */}
           <div className="w-full flex items-center justify-between text-xs text-[#6E6A63] border-b border-[#E8E2D5] pb-3.5">
             <div className="flex items-center space-x-2">
               <span className="w-2 h-2 rounded-full bg-[#C5A059] animate-pulse" />
-              <span className="font-medium text-[11px] uppercase tracking-wider text-[#121214]">Metal & Engraving Simulation</span>
+              <span className="font-medium text-[11px] uppercase tracking-wider text-[#121214]">
+                Metal & Engraving Simulation
+              </span>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setZoomLevel(zoomLevel === 1 ? 1.5 : 1)}
-                className="p-1.5 px-3 rounded-full bg-[#FAF8F5] border border-[#E8E2D5] text-[#121214] hover:border-[#C5A059] flex items-center space-x-1.5 text-[11px] font-semibold uppercase tracking-wider"
-              >
-                <ZoomIn className="w-3.5 h-3.5 text-[#C5A059]" />
-                <span>{zoomLevel === 1 ? 'Zoom Detail' : 'Reset Zoom'}</span>
-              </button>
-            </div>
+            <button
+              onClick={() => setZoomLevel(zoomLevel === 1 ? 1.5 : 1)}
+              className="p-1.5 px-3 rounded-full bg-[#FAF8F5] border border-[#E8E2D5] text-[#121214] hover:border-[#C5A059] flex items-center space-x-1.5 text-[11px] font-semibold uppercase tracking-wider"
+            >
+              <ZoomIn className="w-3.5 h-3.5 text-[#C5A059]" />
+              <span>{zoomLevel === 1 ? 'Zoom Detail' : 'Reset Zoom'}</span>
+            </button>
           </div>
 
-          {/* Jewelry Display Frame */}
-          <div className="relative w-full max-w-md min-h-[360px] flex flex-col items-center justify-center p-6 overflow-hidden">
-            
-            {/* Pendant Chain Loop / Bail */}
-            <div className={`w-5 h-7 -mb-1 rounded-t-full border-2 bg-gradient-to-b ${getBailGradient()} z-10 shadow-xs flex-shrink-0`} />
-
-            {/* Outer Metallic Bezel */}
+          <div className="relative w-full flex flex-col items-center justify-center p-4">
+            {/* Bail */}
             <div
-              className={`relative bg-gradient-to-br ${getMaterialGradient()} ${shapeStyle.outer} shadow-md transition-transform duration-500 flex items-center justify-center border-4 border-white/60 flex-shrink-0`}
+              className="w-5 h-7 -mb-0.5 rounded-t-full border-2 z-10 flex-shrink-0"
               style={{
-                transform: `scale(${zoomLevel})`,
-                boxShadow: `0 20px 40px -10px rgba(0, 0, 0, 0.15), inset 0 2px 10px rgba(255, 255, 255, 0.8)`,
+                background: bail.background,
+                borderColor: bail.borderColor,
+                boxShadow: '0 2px 6px rgba(0,0,0,0.12)',
+              }}
+            />
+
+            {/* Pendant — scaled to fit the page, same aspect as the studio canvas */}
+            <div
+              className="relative flex-shrink-0 transition-transform duration-500"
+              style={{
+                aspectRatio: `${surfaceAspect}`,
+                width: `min(100%, calc(min(50vh, 360px) * ${surfaceAspect}))`,
+                maxHeight: 'min(50vh, 360px)',
+                borderRadius: shapeRadius,
+                transform: `scale(${zoomLevel}) translateZ(0)`,
+                transformOrigin: 'center top',
+                boxShadow: pendantShadow,
+                isolation: 'isolate',
+                WebkitBackfaceVisibility: 'hidden',
+                backfaceVisibility: 'hidden',
               }}
             >
-              {/* Inner High Polish Engraving Canvas with Metal Groove Depth Simulation */}
-              <div className={`relative w-full h-full bg-white/20 ${shapeStyle.inner} flex items-center justify-center border border-white/40 backdrop-blur-xs overflow-hidden`}>
+              {/* Polished metal base */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  borderRadius: shapeRadius,
+                  background: material.base,
+                }}
+              />
 
-                {/* Physical Laser Engraved Composite SVG Overlay */}
-                <div
-                  className="w-full h-full transition-all duration-300"
-                  style={{
-                    filter: `drop-shadow(1px 1px 1px rgba(0,0,0,0.4)) drop-shadow(-0.5px -0.5px 0.5px rgba(255,255,255,0.6))`,
-                    mixBlendMode: 'multiply',
-                  }}
-                  dangerouslySetInnerHTML={{ __html: compositeSvg }}
-                />
+              {/* Laser engraving — recessed matte etch (preview simulation) */}
+              <div
+                className="absolute inset-0 [&>svg]:w-full [&>svg]:h-full"
+                style={{
+                  borderRadius: shapeRadius,
+                  overflow: 'hidden',
+                }}
+                dangerouslySetInnerHTML={{ __html: previewSvg }}
+              />
 
-                {/* Metallic Specular Lighting Reflection */}
-                <div
-                  className={`absolute inset-0 ${shapeStyle.lighting} pointer-events-none opacity-40`}
-                  style={{
-                    background: `linear-gradient(${lightingAngle}deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 40%, rgba(0,0,0,0.2) 100%)`,
-                  }}
-                />
-              </div>
+              {/* Soft studio specular — brightens polished metal, not the matte grooves */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  borderRadius: shapeRadius,
+                  background: material.highlight,
+                  opacity: 0.42,
+                  mixBlendMode: 'soft-light',
+                }}
+              />
+
+              {/* Gentle edge vignette for curved-metal depth */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  borderRadius: shapeRadius,
+                  boxShadow: `
+                    inset 0 0 20px rgba(0, 0, 0, 0.06),
+                    inset 0 0 1px ${material.rim}
+                  `,
+                }}
+              />
+
+              {/* Micro surface grain — breaks up flat digital look */}
+              <div
+                className="absolute inset-0 pointer-events-none opacity-[0.04] mix-blend-overlay"
+                style={{
+                  borderRadius: shapeRadius,
+                  backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="4" stitchTiles="stitch"/></filter><rect width="120" height="120" filter="url(#n)" opacity="0.55"/></svg>'
+                  )}")`,
+                  backgroundSize: '120px 120px',
+                }}
+              />
             </div>
-
-          </div>
-
-          <div className="text-center text-xs text-[#8A857C] max-w-sm font-medium">
-            Realistic simulation showing oxidized laser contrast and micro-beveling depth on physical {jewelry.material.replace('_', ' ')}.
           </div>
         </div>
 
-        {/* Order Details & Summary (5 cols) */}
         <div className="lg:col-span-5 bg-white border border-[#E8E2D5] rounded-3xl p-6 sm:p-8 space-y-6 text-[#121214] shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
-          
           <div>
             <span className="text-xs font-mono text-[#C5A059] uppercase tracking-widest font-bold">{jewelry.sku}</span>
             <h2 className="font-serif text-2xl sm:text-3xl font-bold text-[#121214] mt-0.5">{jewelry.name}</h2>
             <p className="text-[#6E6A63] text-xs mt-1">{jewelry.description}</p>
           </div>
 
-
-          {/* Pricing Breakdown */}
           <div className="space-y-2.5 border-t border-[#E8E2D5] pt-4 text-xs">
             <div className="flex justify-between text-[#6E6A63]">
               <span>Base Jewelry Item</span>
@@ -203,7 +246,6 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
             </div>
           </div>
 
-          {/* Confirm CTA */}
           {confirmError && (
             <p className="text-xs text-red-600 font-medium bg-red-50 border border-red-100 rounded-xl px-3 py-2">
               {confirmError}
@@ -232,12 +274,8 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
             <ShieldCheck className="w-4 h-4 text-[#C5A059]" />
             <span>Guaranteed GIVA Laser Engraving Precision Certificate</span>
           </div>
-
         </div>
-
       </div>
-
     </div>
   );
 };
-
