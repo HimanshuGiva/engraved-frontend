@@ -8,7 +8,7 @@ import {
 } from '../../services/associateService';
 import { getAppOrder } from '../../services/orderService';
 import { ApiError } from '../../services/apiClient';
-import { bundleFromOrder } from '../../utils/designBundle';
+import { bundleFromOrderAsync } from '../../utils/designBundle';
 import { AssociateOrderPanel } from './AssociateOrderPanel';
 import { Search, ExternalLink } from 'lucide-react';
 
@@ -31,7 +31,7 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
   const fetchOrderStatus = useCallback(async (orderId: string) => {
     if (hasAssociateApiAccess()) {
       const { order, job } = await lookupAssociateOrder(orderId);
-      const bundle = bundleFromOrder(order, job?.error_message ?? null);
+      const bundle = await bundleFromOrderAsync(order, job?.error_message ?? null);
       if (!bundle) {
         throw new Error(`Unknown SKU "${order.sku_code}" in order`);
       }
@@ -39,7 +39,7 @@ export const StoreAssociateDrawer: React.FC<StoreAssociateDrawerProps> = ({
     }
 
     const order = await getAppOrder(orderId);
-    const bundle = bundleFromOrder(order);
+    const bundle = await bundleFromOrderAsync(order);
     if (!bundle) {
       throw new Error(`Unknown SKU "${order.sku_code}" in order`);
     }

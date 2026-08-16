@@ -73,6 +73,16 @@ export async function cancelAssociateOrder(orderId: string): Promise<AppEngravin
   });
 }
 
+export async function confirmAssociateMark(
+  orderId: string,
+  decision: 'approve' | 'reject'
+): Promise<{ ok: boolean; decision: string }> {
+  return associateFetch(`/v1/associate/orders/${encodeURIComponent(orderId)}/confirm-mark`, {
+    method: 'POST',
+    body: JSON.stringify({ decision }),
+  });
+}
+
 export function hasAssociateApiAccess(): boolean {
   return Boolean(API_BASE && ASSOCIATE_KEY);
 }

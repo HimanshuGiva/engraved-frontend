@@ -28,7 +28,8 @@ import {
 } from '../types';
 import { buildRegionReplacementUpdates, buildRegionVectorSvg, regionCenter } from '../utils/canvasCapture';
 import { buildSavedDesignBundle } from '../utils/designBundle';
-import { generateCompositeSvg, svgToFillElementBox } from '../utils/svgUtils';
+import { generateProductionSvg, svgToFillElementBox } from '../utils/svgUtils';
+import { collectProductionIssues } from '../utils/svgValidation';
 
 type StudioStep = 'select' | 'studio' | 'preview' | 'confirm';
 
@@ -299,27 +300,36 @@ export default function StudioApp() {
 
   const handleConfirmDesign = async () => {
     if (!selectedJewelry) return;
-    const composite = generateCompositeSvg(currentElements, selectedJewelry);
-    const order = await createAppOrder({
-      channel: 'pos',
-      sku_code: selectedJewelry.backendSkuCode,
-      material_code: selectedJewelry.material,
-      final_svg: composite,
-      ...(linkedMessageId ? { message_id: linkedMessageId } : {}),
-    });
-    setSavedBundle(
-      buildSavedDesignBundle({
-        orderId: order.id,
-        createdAt: order.created_at,
-        channel: order.channel,
-        jewelry: selectedJewelry,
-        elements: currentElements,
-        compositeSvg: composite,
-        messageId: linkedMessageId ?? undefined,
-        fulfillmentStatus: order.fulfillment_status,
-      })
-    );
-    setCurrentStep('confirm');
+    const issues = collectProductionIssues(currentElements, selectedJewelry);
+    if (issues.length > 0) {
+      window.alert(issues.map((i) => i.message).join('\n'));
+      return;
+    }
+    try {
+      const composite = await generateProductionSvg(currentElements, selectedJewelry);
+      const order = await createAppOrder({
+        channel: 'pos',
+        sku_code: selectedJewelry.backendSkuCode,
+        material_code: selectedJewelry.material,
+        final_svg: composite,
+        ...(linkedMessageId ? { message_id: linkedMessageId } : {}),
+      });
+      setSavedBundle(
+        buildSavedDesignBundle({
+          orderId: order.id,
+          createdAt: order.created_at,
+          channel: order.channel,
+          jewelry: selectedJewelry,
+          elements: currentElements,
+          compositeSvg: composite,
+          messageId: linkedMessageId ?? undefined,
+          fulfillmentStatus: order.fulfillment_status,
+        })
+      );
+      setCurrentStep('confirm');
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Failed to create engraving order');
+    }
   };
 
   const selectedElement = currentElements.find((el) => el.id === selectedElementId) ?? null;

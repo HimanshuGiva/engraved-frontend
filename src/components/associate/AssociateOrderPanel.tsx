@@ -6,6 +6,7 @@ import {
 } from '../../constants/fulfillmentStatus';
 import {
   cancelAssociateOrder,
+  confirmAssociateMark,
   hasAssociateApiAccess,
   requeueAssociateOrder,
 } from '../../services/associateService';
@@ -25,12 +26,15 @@ export const AssociateOrderPanel: React.FC<AssociateOrderPanelProps> = ({
 }) => {
   const [isRequeueing, setIsRequeueing] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [markDecisionSent, setMarkDecisionSent] = useState<'approve' | 'reject' | null>(null);
 
   const fulfillmentStatus = bundle.fulfillmentStatus ?? 'submitted';
   const channel = bundle.channel ?? 'pos';
   const statusMeta = getFulfillmentStatusMeta(fulfillmentStatus, channel);
   const canManageLaser = hasAssociateApiAccess() && channel === 'pos';
+  const canConfirmMark = canManageLaser && fulfillmentStatus === 'marking' && !markDecisionSent;
 
   const statusToneClass =
     statusMeta.tone === 'success'
@@ -79,6 +83,26 @@ export const AssociateOrderPanel: React.FC<AssociateOrderPanelProps> = ({
       );
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  const handleMarkDecision = async (decision: 'approve' | 'reject') => {
+    if (!bundle.designId || !canConfirmMark) return;
+    setIsConfirming(true);
+    setActionError('');
+    try {
+      await confirmAssociateMark(bundle.designId, decision);
+      setMarkDecisionSent(decision);
+    } catch (err) {
+      setActionError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Failed to send mark decision'
+      );
+    } finally {
+      setIsConfirming(false);
     }
   };
 
@@ -137,16 +161,45 @@ export const AssociateOrderPanel: React.FC<AssociateOrderPanelProps> = ({
       </div>
 
       {channel === 'pos' && isActiveLaserStatus(fulfillmentStatus) ? (
-        <div className="p-4 bg-white border border-[#E8E2D5] rounded-xl text-[#121214] flex items-center space-x-3">
-          <RefreshCw className="w-5 h-5 text-[#C5A059] flex-shrink-0 animate-spin" />
-          <div>
-            <div className="font-bold text-xs">
-              {fulfillmentStatus === 'marking' ? 'Laser is engraving this piece' : 'Waiting for laser station'}
+        <div className="p-4 bg-white border border-[#E8E2D5] rounded-xl text-[#121214] space-y-3">
+          <div className="flex items-center space-x-3">
+            <RefreshCw className="w-5 h-5 text-[#C5A059] flex-shrink-0 animate-spin" />
+            <div>
+              <div className="font-bold text-xs">
+                {fulfillmentStatus === 'marking'
+                  ? 'Red-light preview ready — confirm to engrave'
+                  : 'Waiting for laser station'}
+              </div>
+              <p className="text-[11px] text-[#6E6A63]">
+                Place jewelry flat in the fixture, verify red-light alignment, then approve mark.
+              </p>
             </div>
-            <p className="text-[11px] text-[#6E6A63]">
-              Job is automated — place jewelry in fixture; marking starts when the agent picks up the job.
-            </p>
           </div>
+          {canConfirmMark ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={isConfirming}
+                onClick={() => handleMarkDecision('approve')}
+                className="flex-1 px-3 py-2 rounded-lg bg-[#121214] text-white text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
+              >
+                {isConfirming ? 'Sending…' : 'Approve Mark'}
+              </button>
+              <button
+                type="button"
+                disabled={isConfirming}
+                onClick={() => handleMarkDecision('reject')}
+                className="flex-1 px-3 py-2 rounded-lg border border-rose-200 text-rose-700 text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
+              >
+                Skip / Reject
+              </button>
+            </div>
+          ) : null}
+          {markDecisionSent ? (
+            <p className="text-[11px] text-[#6E6A63]">
+              Decision sent: <span className="font-semibold text-[#121214]">{markDecisionSent}</span>. Waiting for agent…
+            </p>
+          ) : null}
         </div>
       ) : null}
 

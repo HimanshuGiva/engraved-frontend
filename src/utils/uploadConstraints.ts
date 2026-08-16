@@ -2,7 +2,7 @@ import { MessageContentType } from '../types';
 
 export const VIDEO_CONTENT_TYPES = ['video/mp4', 'video/quicktime'] as const;
 
-const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
+const DEFAULT_MAX_BYTES = Math.round(6 * 1024 * 1024);
 const DEFAULT_PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
 export interface UploadConstraints {

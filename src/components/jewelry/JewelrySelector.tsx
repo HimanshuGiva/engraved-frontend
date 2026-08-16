@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { JewelryItem, JewelryMaterial } from '../../types';
-import { JEWELRY_CATALOG } from '../../data/jewelryCatalog';
+import { fetchJewelryCatalog } from '../../services/catalogService';
 import { Sparkles, Ruler, ArrowRight } from 'lucide-react';
 
 interface JewelrySelectorProps {
@@ -11,8 +11,34 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
   onSelectJewelry,
 }) => {
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
+  const [items, setItems] = useState<JewelryItem[]>([]);
+  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const filteredItems = JEWELRY_CATALOG.filter((item) => {
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchJewelryCatalog()
+      .then((catalog) => {
+        if (!cancelled) {
+          setItems(catalog);
+          setLoadError('');
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Failed to load catalog');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filteredItems = items.filter((item) => {
     if (selectedTypeFilter === 'all') return true;
     return item.constraints.shape === selectedTypeFilter;
   });
@@ -48,8 +74,6 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
-
-      {/* Header */}
       <div className="space-y-2 max-w-2xl">
         <div className="inline-flex items-center space-x-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-[#C5A059]">
           <Sparkles className="w-3.5 h-3.5" />
@@ -63,7 +87,6 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
         </p>
       </div>
 
-      {/* Filter Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {[
           { id: 'all', label: 'All' },
@@ -85,9 +108,18 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
         ))}
       </div>
 
-      {/* Products Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-        {filteredItems.map((item) => (
+      {loading && (
+        <p className="text-sm text-[#6E6A63]">Loading catalog…</p>
+      )}
+      {loadError && (
+        <p className="text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-4 py-3">
+          {loadError}
+        </p>
+      )}
+
+      {!loading && !loadError && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          {filteredItems.map((item) => (
             <div
               key={item.id}
               role="button"
@@ -101,7 +133,6 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
               }}
               className="group relative rounded-3xl bg-white border border-[#E8E2D5] hover:border-[#C5A059]/60 hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition-all duration-300 overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C5A059]/50"
             >
-              {/* Image */}
               <div className="relative h-56 bg-[#F7F4EE]">
                 <img
                   src={item.imageUrl}
@@ -114,7 +145,6 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
                 </div>
               </div>
 
-              {/* Content */}
               <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
                 <div className="space-y-1.5">
                   <h3 className="font-serif text-lg font-bold text-[#121214] leading-snug">{item.name}</h3>
@@ -145,9 +175,9 @@ export const JewelrySelector: React.FC<JewelrySelectorProps> = ({
                 </div>
               </div>
             </div>
-        ))}
-      </div>
-
+          ))}
+        </div>
+      )}
     </div>
   );
 };
