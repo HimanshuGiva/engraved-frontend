@@ -1,11 +1,14 @@
-import opentype, { type Font } from 'opentype.js';
+import { parse as parseFont, type Font } from 'opentype.js';
 
-/** Font files for production text→path conversion (hosted under /fonts). */
+/**
+ * Font files for production text→path conversion (hosted under /fonts).
+ * Must stay in sync with getEngravingFont so the cut matches the preview.
+ */
 const FONT_URLS: Record<string, string> = {
-  serif: '/fonts/PlayfairDisplay-SemiBold.ttf',
+  serif: '/fonts/CormorantGaramond-SemiBold.ttf',
   sans: '/fonts/PlusJakartaSans-SemiBold.ttf',
-  script: '/fonts/PlayfairDisplay-Italic.ttf',
-  mono: '/fonts/PlusJakartaSans-SemiBold.ttf',
+  script: '/fonts/CormorantGaramond-SemiBoldItalic.ttf',
+  mono: '/fonts/JetBrainsMono-SemiBold.ttf',
 };
 
 const fontCache = new Map<string, Font>();
@@ -22,7 +25,7 @@ async function loadFont(fontId: string): Promise<Font> {
     }
     return res.arrayBuffer();
   });
-  const font = opentype.parse(buffer);
+  const font = parseFont(buffer);
   fontCache.set(key, font);
   return font;
 }

@@ -354,9 +354,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               </div>
               <input
                 type="range"
-                min="0.5"
-                max={6}
-                step="0.5"
+                min="1"
+                max={20}
+                step="1"
                 value={selectedElement.strokeWidth ?? 1}
                 {...sliderEditHandlers}
                 onChange={(e) =>
@@ -369,7 +369,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 className="w-full accent-[#C5A059] cursor-pointer"
               />
               <div className="flex items-center space-x-1.5 pt-1">
-                {[0.5, 1, 2, 3, 4, 6].map((w) => (
+                {[1, 2, 4, 8, 12, 20].map((w) => (
                   <button
                     key={w}
                     type="button"

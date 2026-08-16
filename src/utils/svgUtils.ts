@@ -1,4 +1,6 @@
 import { CanvasElement, JewelryItem, JewelryMaterial, isErasableLayer } from '../types';
+import { engravingTextFontSize, getEngravingFont } from '../constants/fonts';
+import { getEngravingSurfaceAspect } from '../constants/engravingSurface';
 
 /** One eraser stroke in the target element's local 0–100 coordinate space. */
 export type EraserStroke = { content: string; strokeWidth: number; filled?: boolean };
@@ -136,47 +138,50 @@ export function buildFreehandSessionData(
 }
 
 /**
- * Fit canvas artwork into an element box using the same layout as the live
- * canvas (centered rect with meet) — NOT a uniform scale() which skews AI art.
+ * Potrace / sidecar SVGs often arrive with an XML prolog and a DOCTYPE that
+ * points at w3.org. Browsers refuse to paint that as an <img>, which is how
+ * enhance-preview capture works — so strip it before we embed or rasterize.
  */
-export function embedArtworkMarkup(
-  el: CanvasElement,
-  rotation: string,
-  maskAttr: string
-): string {
-  const trimmed = el.content.trim();
-  const viewBoxMatch = trimmed.match(/viewBox=["']([^"']+)["']/i);
-  const viewBox = viewBoxMatch?.[1] ?? '0 0 100 100';
-
-  let inner: string;
-  if (trimmed.startsWith('<svg')) {
-    const match = trimmed.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
-    inner = match ? match[1] : trimmed;
-  } else {
-    inner = trimmed;
+export function stripSvgPreamble(content: string): string {
+  let s = content.replace(/^\uFEFF/, '').trim();
+  for (let i = 0; i < 4; i++) {
+    if (/^<\?xml\b/i.test(s)) {
+      const end = s.indexOf('?>');
+      if (end < 0) break;
+      s = s.slice(end + 2).trim();
+      continue;
+    }
+    if (/^<!DOCTYPE\b/i.test(s)) {
+      const end = s.indexOf('>');
+      if (end < 0) break;
+      s = s.slice(end + 1).trim();
+      continue;
+    }
+    break;
   }
+  return s;
+}
 
-  const halfW = (el.width / 2).toFixed(2);
-  const halfH = (el.height / 2).toFixed(2);
+/** Root <svg>…</svg> if present, otherwise the cleaned markup. */
+export function extractRootSvg(content: string): string {
+  const cleaned = stripSvgPreamble(content);
+  const start = cleaned.search(/<svg\b/i);
+  if (start < 0) return cleaned;
+  const end = cleaned.toLowerCase().lastIndexOf('</svg>');
+  if (end < 0) return cleaned.slice(start);
+  return cleaned.slice(start, end + 6);
+}
 
-  const artwork = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" x="${-halfW}" y="${-halfH}" width="${el.width}" height="${el.height}" preserveAspectRatio="xMidYMid meet">${inner}</svg>`;
-
-  return `\n  <g transform="translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation})">\n    <g${maskAttr}>\n    ${artwork}\n    </g>\n  </g>`;
+function svgInnerMarkup(content: string): { viewBox: string; fit: string; inner: string } {
+  const root = extractRootSvg(content);
+  const viewBox = root.match(/viewBox=["']([^"']+)["']/i)?.[1] ?? '0 0 100 100';
+  const fit = root.match(/preserveAspectRatio=["']([^"']+)["']/i)?.[1] ?? 'xMidYMid meet';
+  const match = root.match(/<svg\b[^>]*>([\s\S]*)<\/svg>/i);
+  return { viewBox, fit, inner: match ? match[1] : root };
 }
 
 export function normalizeEmbeddedArtworkSvg(content: string): string {
-  const trimmed = content.trim();
-  const viewBoxMatch = trimmed.match(/viewBox=["']([^"']+)["']/i);
-  const viewBox = viewBoxMatch?.[1] ?? '0 0 100 100';
-
-  let inner: string;
-  if (trimmed.startsWith('<svg')) {
-    const match = trimmed.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
-    inner = match ? match[1] : trimmed;
-  } else {
-    inner = trimmed;
-  }
-
+  const { viewBox, inner } = svgInnerMarkup(content);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid meet">${inner}</svg>`;
 }
 
@@ -186,8 +191,8 @@ export function isRasterArtwork(content: string): boolean {
 
 /** Force SVG artwork to fill its element box (used when applying a region enhance). */
 export function svgToFillElementBox(svgCode: string): string {
-  const trimmed = svgCode.trim();
-  if (!trimmed.startsWith('<svg')) return svgCode;
+  const trimmed = extractRootSvg(svgCode);
+  if (!/^<svg\b/i.test(trimmed)) return svgCode;
   return trimmed
     .replace(/\s+preserveAspectRatio="[^"]*"/i, '')
     .replace(/<svg\b/i, '<svg preserveAspectRatio="none"');
@@ -199,45 +204,164 @@ export function extractEmbeddedRasterDataUrl(content: string): string | null {
   return match?.[1] ?? null;
 }
 
+export function escapeXmlText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/** Local-space anchor of canvas text — matches the <text x/y> used by the canvas. */
+const TEXT_ANCHOR_X = 50;
+const TEXT_ANCHOR_Y = 52;
+
+/**
+ * A composite stretches its 100×100 viewBox across the whole engraving surface,
+ * so one user unit is not the same size in x and y. Anything that has to stay
+ * isotropic — a layer's rotation, and the aspect-preserving fit the canvas gives
+ * to text and imported artwork — is therefore expressed in a corrected space:
+ * `frame` puts the origin at the layer centre there, and boxW/boxH are the
+ * layer's box measured in the same space.
+ */
+interface LayerFrame {
+  frame: string;
+  boxW: number;
+  boxH: number;
+}
+
+export function layerFrame(el: CanvasElement, surfaceAspect: number): LayerFrame {
+  const aspect = Math.max(surfaceAspect, 0.05);
+  return {
+    frame: `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) scale(${(1 / aspect).toFixed(4)}, 1) rotate(${el.rotation.toFixed(2)})`,
+    boxW: el.width * aspect,
+    boxH: el.height,
+  };
+}
+
+/** Maps a layer's local 0–100 space onto its box, as preserveAspectRatio="none" does. */
+function boxTransform({ boxW, boxH }: LayerFrame): string {
+  return `translate(${(-boxW / 2).toFixed(3)}, ${(-boxH / 2).toFixed(3)}) scale(${(boxW / 100).toFixed(4)}, ${(boxH / 100).toFixed(4)})`;
+}
+
+/** Uniform fit of the local 0–100 space inside the box, as `xMidYMid meet` does. */
+function fitTransform({ boxW, boxH }: LayerFrame): string {
+  const k = Math.min(boxW, boxH) / 100;
+  return `translate(${(-50 * k).toFixed(3)}, ${(-50 * k).toFixed(3)}) scale(${k.toFixed(4)})`;
+}
+
+function wrapLayer(frame: LayerFrame, maskAttr: string, inner: string): string {
+  return `\n  <g transform="${frame.frame}">\n    <g${maskAttr}>${inner}\n    </g>\n  </g>`;
+}
+
+/**
+ * Eraser strokes are authored in the layer's local 0–100 space, but the mask is
+ * applied in the layer frame, so its contents need the same box mapping.
+ */
+export function eraserMaskDef(
+  maskId: string,
+  el: CanvasElement,
+  surfaceAspect: number,
+  strokes: string
+): string {
+  const transform = boxTransform(layerFrame(el, surfaceAspect));
+  return `\n    <mask id="${maskId}" maskContentUnits="userSpaceOnUse">\n      <g transform="${transform}">\n        <rect x="0" y="0" width="100" height="100" fill="white" />\n        ${strokes}\n      </g>\n    </mask>`;
+}
+
+/**
+ * Imported artwork keeps its own proportions inside the layer box, exactly as
+ * the browser does for the raw SVG the canvas drops into that box.
+ */
+export function embedArtworkMarkup(
+  el: CanvasElement,
+  surfaceAspect: number,
+  maskAttr: string
+): string {
+  const { viewBox, fit, inner } = svgInnerMarkup(el.content);
+
+  const frame = layerFrame(el, surfaceAspect);
+  const artwork = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" x="${(-frame.boxW / 2).toFixed(3)}" y="${(-frame.boxH / 2).toFixed(3)}" width="${frame.boxW.toFixed(3)}" height="${frame.boxH.toFixed(3)}" preserveAspectRatio="${fit}">${inner}</svg>`;
+
+  return wrapLayer(frame, maskAttr, `\n    ${artwork}`);
+}
+
+/** Stroked vector layers stretch to fill their box, as they do on the canvas. */
+export function pathLayerMarkup(
+  el: CanvasElement,
+  surfaceAspect: number,
+  maskAttr: string,
+  stroke: string
+): string {
+  const frame = layerFrame(el, surfaceAspect);
+  const inner = `\n    <g transform="${boxTransform(frame)}">\n      <path d="${el.content}" fill="none" stroke="${stroke}" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" />\n    </g>`;
+  return wrapLayer(frame, maskAttr, inner);
+}
+
+export function textLayerMarkup(el: CanvasElement, surfaceAspect: number, fill: string): string {
+  const frame = layerFrame(el, surfaceAspect);
+  const font = getEngravingFont(el.color);
+  const fontSize = engravingTextFontSize(el.content);
+  const inner = `\n    <g transform="${fitTransform(frame)}">\n      <text x="${TEXT_ANCHOR_X}" y="${TEXT_ANCHOR_Y}" font-family="${font.family}" font-style="${font.style}" font-size="${fontSize.toFixed(3)}" font-weight="${font.weight}" fill="${fill}" stroke="none" text-anchor="middle" dominant-baseline="middle">${escapeXmlText(el.content)}</text>\n    </g>`;
+  return wrapLayer(frame, '', inner);
+}
+
+/** Same placement as textLayerMarkup, for text already converted to outlines. */
+function textPathMarkup(el: CanvasElement, d: string, surfaceAspect: number, fill: string): string {
+  const frame = layerFrame(el, surfaceAspect);
+  const inner = `\n    <g transform="${fitTransform(frame)}">\n      <path d="${d}" transform="translate(${TEXT_ANCHOR_X}, ${TEXT_ANCHOR_Y})" fill="${fill}" stroke="none" />\n    </g>`;
+  return wrapLayer(frame, '', inner);
+}
+
 interface CompositeLayers {
   maskDefs: string;
   vectorContent: string;
   rasterContent: string;
 }
 
+/** Engraved marks are drawn as ink here; the preview filter turns them into grooves. */
+const ENGRAVE_INK = '#111111';
+
+export function buildLayerMask(
+  el: CanvasElement,
+  erasers: CanvasElement[],
+  surfaceAspect: number,
+  idPrefix = 'erase-mask'
+): { def: string; attr: string } {
+  const related = erasers.filter((e) => e.targetElementId === el.id);
+  if (!isErasableLayer(el.type) || related.length === 0) return { def: '', attr: '' };
+
+  const maskId = `${idPrefix}-${el.id}`;
+  const strokes = related
+    .map((e) =>
+      eraserMaskPathMarkup({
+        content: e.content,
+        strokeWidth: e.strokeWidth ?? 8,
+        filled: e.eraserFill,
+      })
+    )
+    .join('\n        ');
+
+  return {
+    def: eraserMaskDef(maskId, el, surfaceAspect, strokes),
+    attr: ` mask="url(#${maskId})"`,
+  };
+}
+
 async function buildCompositeLayers(
   elements: CanvasElement[],
-  _jewelry: JewelryItem,
+  jewelry: JewelryItem,
   options: { convertTextToPaths: boolean; allowRaster: boolean }
 ): Promise<CompositeLayers> {
   const sorted = [...elements].filter((el) => el.type !== 'eraser').sort((a, b) => a.zIndex - b.zIndex);
   const erasers = elements.filter((el) => el.type === 'eraser');
+  const surfaceAspect = getEngravingSurfaceAspect(jewelry.constraints.shape);
 
   let vectorContent = '';
   let rasterContent = '';
   let maskDefs = '';
 
   for (const el of sorted) {
-    const sx = el.width / 100;
-    const sy = el.height / 100;
-    const rotation = el.rotation.toFixed(2);
-
-    const relatedErasers = erasers.filter((e) => e.targetElementId === el.id);
-    let maskAttr = '';
-    if (isErasableLayer(el.type) && relatedErasers.length > 0) {
-      const maskId = `erase-mask-${el.id}`;
-      const strokes = relatedErasers.map((e) => eraserMaskPathMarkup({
-        content: e.content,
-        strokeWidth: e.strokeWidth ?? 8,
-        filled: e.eraserFill,
-      })).join('\n      ');
-      maskDefs += `\n    <mask id="${maskId}" maskContentUnits="userSpaceOnUse">\n      <rect x="0" y="0" width="100" height="100" fill="white" />\n      ${strokes}\n    </mask>`;
-      maskAttr = ` mask="url(#${maskId})"`;
-    }
-
-    const shiftX = (-50 * sx).toFixed(3);
-    const shiftY = (-50 * sy).toFixed(3);
-    const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) translate(${shiftX}, ${shiftY}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
+    const mask = buildLayerMask(el, erasers, surfaceAspect);
+    maskDefs += mask.def;
 
     if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
       if (isRasterArtwork(el.content)) {
@@ -246,20 +370,47 @@ async function buildCompositeLayers(
             `Layer "${el.name}" contains an embedded raster image. Vectorize or remove it before engraving.`
           );
         }
-        rasterContent += embedArtworkMarkup(el, rotation, maskAttr);
+        rasterContent += embedArtworkMarkup(el, surfaceAspect, mask.attr);
       } else {
-        vectorContent += embedArtworkMarkup(el, rotation, maskAttr);
+        vectorContent += embedArtworkMarkup(el, surfaceAspect, mask.attr);
       }
     } else if (el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
-      vectorContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${el.content}" fill="none" stroke="#111111" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" />\n    </g>\n  </g>`;
+      vectorContent += pathLayerMarkup(el, surfaceAspect, mask.attr, ENGRAVE_INK);
     } else if (el.type === 'text') {
       if (options.convertTextToPaths) {
         const { textToSvgPath } = await import('./textToPath');
-        const d = await textToSvgPath(el.content, el.color, 16);
-        vectorContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${d}" fill="#111111" stroke="none" />\n    </g>\n  </g>`;
+        const d = await textToSvgPath(el.content, el.color, engravingTextFontSize(el.content));
+        vectorContent += textPathMarkup(el, d, surfaceAspect, ENGRAVE_INK);
       } else {
-        vectorContent += `\n  <g transform="${transform}">\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n  </g>`;
+        vectorContent += textLayerMarkup(el, surfaceAspect, ENGRAVE_INK);
       }
+    }
+  }
+
+  return { maskDefs, vectorContent, rasterContent };
+}
+
+/** Display composite: text stays as <text> and rasters are kept, so it stays sync. */
+function buildDisplayLayers(elements: CanvasElement[], surfaceAspect: number): CompositeLayers {
+  const sorted = [...elements].filter((el) => el.type !== 'eraser').sort((a, b) => a.zIndex - b.zIndex);
+  const erasers = elements.filter((el) => el.type === 'eraser');
+
+  let maskDefs = '';
+  let vectorContent = '';
+  let rasterContent = '';
+
+  for (const el of sorted) {
+    const mask = buildLayerMask(el, erasers, surfaceAspect);
+    maskDefs += mask.def;
+
+    if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
+      const markup = embedArtworkMarkup(el, surfaceAspect, mask.attr);
+      if (isRasterArtwork(el.content)) rasterContent += markup;
+      else vectorContent += markup;
+    } else if (el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
+      vectorContent += pathLayerMarkup(el, surfaceAspect, mask.attr, ENGRAVE_INK);
+    } else if (el.type === 'text') {
+      vectorContent += textLayerMarkup(el, surfaceAspect, ENGRAVE_INK);
     }
   }
 
@@ -270,49 +421,10 @@ async function buildCompositeLayers(
  * Preview / canvas composite — may include &lt;text&gt; and rasters for display.
  */
 export function generateCompositeSvg(elements: CanvasElement[], jewelry: JewelryItem): string {
-  // Sync preview path: text stays as <text> for speed; production uses generateProductionSvg.
-  let maskDefs = '';
-  let vectorContent = '';
-  let rasterContent = '';
-
-  const sorted = [...elements].filter((el) => el.type !== 'eraser').sort((a, b) => a.zIndex - b.zIndex);
-  const erasers = elements.filter((el) => el.type === 'eraser');
-
-  for (const el of sorted) {
-    const sx = el.width / 100;
-    const sy = el.height / 100;
-    const rotation = el.rotation.toFixed(2);
-    const relatedErasers = erasers.filter((e) => e.targetElementId === el.id);
-    let maskAttr = '';
-    if (isErasableLayer(el.type) && relatedErasers.length > 0) {
-      const maskId = `erase-mask-${el.id}`;
-      const strokes = relatedErasers
-        .map((e) =>
-          eraserMaskPathMarkup({
-            content: e.content,
-            strokeWidth: e.strokeWidth ?? 8,
-            filled: e.eraserFill,
-          })
-        )
-        .join('\n      ');
-      maskDefs += `\n    <mask id="${maskId}" maskContentUnits="userSpaceOnUse">\n      <rect x="0" y="0" width="100" height="100" fill="white" />\n      ${strokes}\n    </mask>`;
-      maskAttr = ` mask="url(#${maskId})"`;
-    }
-    const shiftX = (-50 * sx).toFixed(3);
-    const shiftY = (-50 * sy).toFixed(3);
-    const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) translate(${shiftX}, ${shiftY}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
-
-    if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
-      const markup = embedArtworkMarkup(el, rotation, maskAttr);
-      if (isRasterArtwork(el.content)) rasterContent += markup;
-      else vectorContent += markup;
-    } else if (el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
-      vectorContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${el.content}" fill="none" stroke="#111111" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" />\n    </g>\n  </g>`;
-    } else if (el.type === 'text') {
-      vectorContent += `\n  <g transform="${transform}">\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n  </g>`;
-    }
-  }
-
+  const { maskDefs, vectorContent, rasterContent } = buildDisplayLayers(
+    elements,
+    getEngravingSurfaceAspect(jewelry.constraints.shape)
+  );
   return wrapProductionSvg(jewelry, maskDefs, vectorContent + rasterContent);
 }
 
@@ -338,72 +450,136 @@ function wrapProductionSvg(jewelry: JewelryItem, maskDefs: string, content: stri
   <style>
     path, circle, rect, polygon, text { vector-effect: non-scaling-stroke; }
   </style>
-  <g id="production-engraving-layer" fill="none" stroke="#111111">
+  <g id="production-engraving-layer" color="${ENGRAVE_INK}">
     ${content}
   </g>
 </svg>`;
 }
 
-/** Preview-only palette — laser etch reads as matte charcoal/brown, never flat black. */
+/**
+ * Preview-only etch palette.
+ *
+ * A laser mark is a recessed groove in polished metal, not ink on top of it:
+ * the floor is a shallow matte veil that still shows the metal tone underneath,
+ * while the walls read much darker and the lower rim catches the light. Colours
+ * are therefore semi-transparent so they composite over the metal gradient
+ * instead of replacing it with a flat swatch.
+ */
 interface EtchPalette {
-  groove: string;
-  shadow: string;
-  highlight: string;
+  floor: string;
+  floorOpacity: number;
+  wall: string;
+  wallOpacity: number;
+  rim: string;
+  rimOpacity: number;
 }
 
 function getEtchPalette(material: JewelryMaterial): EtchPalette {
   switch (material) {
     case '18k_gold':
-      return { groove: '#5a4528', shadow: '#2e2214', highlight: '#f5e6c8' };
+      return {
+        floor: '#3a2a0c',
+        floorOpacity: 0.56,
+        wall: '#43310f',
+        wallOpacity: 0.55,
+        rim: '#fff4d6',
+        rimOpacity: 0.42,
+      };
     case 'rose_gold':
-      return { groove: '#5a3f38', shadow: '#352520', highlight: '#fde8e0' };
+      return {
+        floor: '#3a231c',
+        floorOpacity: 0.56,
+        wall: '#432a21',
+        wallOpacity: 0.55,
+        rim: '#ffe9e2',
+        rimOpacity: 0.42,
+      };
     case 'platinum':
-      return { groove: '#454b54', shadow: '#252930', highlight: '#f0f2f5' };
+      return {
+        floor: '#272d34',
+        floorOpacity: 0.58,
+        wall: '#313944',
+        wallOpacity: 0.55,
+        rim: '#ffffff',
+        rimOpacity: 0.42,
+      };
     case 'silver':
     default:
-      return { groove: '#434b53', shadow: '#23282d', highlight: '#eef2f6' };
+      return {
+        floor: '#2a323b',
+        floorOpacity: 0.58,
+        wall: '#333c45',
+        wallOpacity: 0.55,
+        rim: '#ffffff',
+        rimOpacity: 0.42,
+      };
   }
 }
 
-/** SVG filter simulating recessed laser grooves with inner shadow + edge highlight. */
+function hexChannels(hex: string): [number, number, number] {
+  const raw = hex.replace('#', '');
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+  return [
+    parseInt(full.slice(0, 2), 16) / 255,
+    parseInt(full.slice(2, 4), 16) / 255,
+    parseInt(full.slice(4, 6), 16) / 255,
+  ];
+}
+
+/**
+ * Recessed-groove filter. Wall slivers are derived by subtracting an offset
+ * copy of the shape from itself, so their width is fixed in surface units
+ * rather than proportional to the stroke. A hairline stroke is therefore
+ * almost entirely wall (reads as a dark etched line), while a thick stroke
+ * keeps a matte metal floor in the middle with shaded edges — which is how a
+ * wide engraved area actually looks.
+ *
+ * Offsets/blurs are in the 0–100 viewBox user space shared by every layer.
+ */
 function buildLaserEtchFilter(id: string, palette: EtchPalette): string {
   return `
-    <filter id="${id}" filterUnits="objectBoundingBox" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
-      <feOffset in="SourceAlpha" dx="0.008" dy="0.01" result="offShadow"/>
-      <feGaussianBlur in="offShadow" stdDeviation="0.006" result="blurShadow"/>
-      <feFlood flood-color="${palette.shadow}" flood-opacity="0.55" result="shadowColor"/>
-      <feComposite in="shadowColor" in2="blurShadow" operator="in" result="innerShadow"/>
+    <filter id="${id}" x="-14%" y="-14%" width="128%" height="128%" color-interpolation-filters="sRGB">
+      <feFlood flood-color="${palette.floor}" flood-opacity="${palette.floorOpacity}" result="floorColor"/>
+      <feComposite in="floorColor" in2="SourceAlpha" operator="in" result="floor"/>
 
-      <feOffset in="SourceAlpha" dx="-0.006" dy="-0.008" result="offHi"/>
-      <feGaussianBlur in="offHi" stdDeviation="0.004" result="blurHi"/>
-      <feFlood flood-color="${palette.highlight}" flood-opacity="0.32" result="hiColor"/>
-      <feComposite in="hiColor" in2="blurHi" operator="in" result="innerHi"/>
+      <feOffset in="SourceAlpha" dx="-0.22" dy="-0.7" result="liftAlpha"/>
+      <feGaussianBlur in="liftAlpha" stdDeviation="0.6" result="liftBlur"/>
+      <feComposite in="SourceAlpha" in2="liftBlur" operator="out" result="lowerWallMask"/>
+      <feFlood flood-color="${palette.rim}" flood-opacity="${palette.rimOpacity}" result="rimColor"/>
+      <feComposite in="rimColor" in2="lowerWallMask" operator="in" result="lowerWall"/>
 
-      <feFlood flood-color="${palette.groove}" flood-opacity="0.9" result="grooveColor"/>
-      <feComposite in="grooveColor" in2="SourceAlpha" operator="in" result="groove"/>
-      <feGaussianBlur in="groove" stdDeviation="0.003" result="softGroove"/>
+      <feOffset in="SourceAlpha" dx="0.24" dy="0.72" result="dropAlpha"/>
+      <feGaussianBlur in="dropAlpha" stdDeviation="0.8" result="dropBlur"/>
+      <feComposite in="SourceAlpha" in2="dropBlur" operator="out" result="upperWallMask"/>
+      <feFlood flood-color="${palette.wall}" flood-opacity="${palette.wallOpacity}" result="wallColor"/>
+      <feComposite in="wallColor" in2="upperWallMask" operator="in" result="upperWall"/>
 
       <feMerge>
-        <feMergeNode in="innerShadow"/>
-        <feMergeNode in="softGroove"/>
-        <feMergeNode in="innerHi"/>
+        <feMergeNode in="floor"/>
+        <feMergeNode in="lowerWall"/>
+        <feMergeNode in="upperWall"/>
       </feMerge>
     </filter>`;
 }
 
-/** Darken/desaturate raster AI artwork so it reads as a laser mark, not a sticker. */
+/**
+ * Raster artwork can't be given groove walls, so darkness is mapped to etch
+ * depth instead: dark pixels become an opaque wall-toned mark, light pixels
+ * fade out entirely so the metal shows through.
+ */
 function buildRasterEtchFilter(id: string, palette: EtchPalette): string {
+  const [wr, wg, wb] = hexChannels(palette.wall);
   return `
-    <filter id="${id}" filterUnits="objectBoundingBox" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+    <filter id="${id}" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
       <feColorMatrix in="SourceGraphic" type="matrix"
-        values="0.34 0.34 0.34 0 0.05
-                0.30 0.30 0.30 0 0.04
-                0.26 0.26 0.26 0 0.03
-                0    0    0    0.92 0" result="etched"/>
-      <feGaussianBlur in="etched" stdDeviation="0.08" result="softEtched"/>
-      <feMerge>
-        <feMergeNode in="softEtched"/>
-      </feMerge>
+        values="0 0 0 0 ${wr.toFixed(3)}
+                0 0 0 0 ${wg.toFixed(3)}
+                0 0 0 0 ${wb.toFixed(3)}
+                -0.33 -0.33 -0.33 1 0" result="depth"/>
+      <feComponentTransfer in="depth" result="etched">
+        <feFuncA type="linear" slope="0.82" intercept="0"/>
+      </feComponentTransfer>
+      <feGaussianBlur in="etched" stdDeviation="0.05"/>
     </filter>`;
 }
 
@@ -413,54 +589,17 @@ function buildRasterEtchFilter(id: string, palette: EtchPalette): string {
  * not flat black ink on the surface.
  */
 export function generatePreviewCompositeSvg(elements: CanvasElement[], jewelry: JewelryItem): string {
-  // Sync preview: keep <text> for speed; production path converts to paths.
-  const sorted = [...elements].filter((el) => el.type !== 'eraser').sort((a, b) => a.zIndex - b.zIndex);
-  const erasers = elements.filter((el) => el.type === 'eraser');
-  let maskDefs = '';
-  let vectorContent = '';
-  let rasterContent = '';
-
-  for (const el of sorted) {
-    const sx = el.width / 100;
-    const sy = el.height / 100;
-    const rotation = el.rotation.toFixed(2);
-    const relatedErasers = erasers.filter((e) => e.targetElementId === el.id);
-    let maskAttr = '';
-    if (isErasableLayer(el.type) && relatedErasers.length > 0) {
-      const maskId = `erase-mask-${el.id}`;
-      const strokes = relatedErasers
-        .map((e) =>
-          eraserMaskPathMarkup({
-            content: e.content,
-            strokeWidth: e.strokeWidth ?? 8,
-            filled: e.eraserFill,
-          })
-        )
-        .join('\n      ');
-      maskDefs += `\n    <mask id="${maskId}" maskContentUnits="userSpaceOnUse">\n      <rect x="0" y="0" width="100" height="100" fill="white" />\n      ${strokes}\n    </mask>`;
-      maskAttr = ` mask="url(#${maskId})"`;
-    }
-    const shiftX = (-50 * sx).toFixed(3);
-    const shiftY = (-50 * sy).toFixed(3);
-    const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) translate(${shiftX}, ${shiftY}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
-
-    if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
-      const markup = embedArtworkMarkup(el, rotation, maskAttr);
-      if (isRasterArtwork(el.content)) rasterContent += markup;
-      else vectorContent += markup;
-    } else if (el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
-      vectorContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${el.content}" fill="none" stroke="#111111" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" />\n    </g>\n  </g>`;
-    } else if (el.type === 'text') {
-      vectorContent += `\n  <g transform="${transform}">\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n  </g>`;
-    }
-  }
+  const { maskDefs, vectorContent, rasterContent } = buildDisplayLayers(
+    elements,
+    getEngravingSurfaceAspect(jewelry.constraints.shape)
+  );
 
   const palette = getEtchPalette(jewelry.material);
   const vectorFilter = buildLaserEtchFilter('preview-laser-etch', palette);
   const rasterFilter = buildRasterEtchFilter('preview-raster-etch', palette);
 
   const vectorLayer = vectorContent
-    ? `\n  <g filter="url(#preview-laser-etch)" fill="none" stroke="#111111">${vectorContent}\n  </g>`
+    ? `\n  <g filter="url(#preview-laser-etch)" color="${ENGRAVE_INK}">${vectorContent}\n  </g>`
     : '';
   const rasterLayer = rasterContent
     ? `\n  <g filter="url(#preview-raster-etch)">${rasterContent}\n  </g>`

@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CanvasElement, CanvasRegion, JewelryItem, isErasableLayer } from '../../types';
 import { ENGRAVING_SURFACE_CLASS } from '../../constants/engravingSurface';
-import { getFontClass } from '../../constants/fonts';
+import { engravingTextFontSize, getEngravingFont } from '../../constants/fonts';
 import { pointsToSvgPath, buildEraserMaskDataUri, buildFreehandSessionData, eraserStrokesFromElements, EraserStroke, canvasPointsToLocalSubpaths, subpathsToSvgPath } from '../../utils/svgUtils';
 import { normalizeCanvasRegion } from '../../utils/canvasCapture';
 import { SHAPE_PRESETS, SHAPE_LABELS } from '../../constants/shapes';
@@ -897,8 +897,11 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                           y="52"
                           textAnchor="middle"
                           dominantBaseline="middle"
-                          fontSize={Math.min(32, 160 / Math.max(el.content.length, 1))}
-                          className={`fill-[#121214] font-bold ${getFontClass(el.color)}`}
+                          fontSize={engravingTextFontSize(el.content)}
+                          fontFamily={getEngravingFont(el.color).family}
+                          fontStyle={getEngravingFont(el.color).style}
+                          fontWeight={getEngravingFont(el.color).weight}
+                          className="fill-[#121214]"
                         >
                           {el.content}
                         </text>

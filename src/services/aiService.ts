@@ -44,6 +44,30 @@ export async function fetchAiEngravingOptions(
   return { title: prompt, options };
 }
 
+interface BackendVectorizeResponse {
+  svg: string;
+  content_type: string;
+}
+
+/** Convert a raster snapshot straight to SVG on the server (no AI). */
+export async function fetchVectorize(
+  imageDataUrl: string
+): Promise<{ svgCode: string; previewUrl: string }> {
+  const data = await apiFetch<BackendVectorizeResponse>('/v1/vectorize', {
+    method: 'POST',
+    body: JSON.stringify({ image_b64: imageDataUrl }),
+  });
+
+  if (!data.svg) {
+    throw new Error('Vectorizer returned no SVG');
+  }
+
+  return {
+    svgCode: data.svg,
+    previewUrl: svgToDataUrl(data.svg),
+  };
+}
+
 interface BackendEnhanceResponse {
   svg: string;
   provider: string;
