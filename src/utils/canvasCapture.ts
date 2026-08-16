@@ -1,13 +1,21 @@
 import { CanvasElement, CanvasRegion, isErasableLayer } from '../types';
 import {
+  buildLayerMask,
   embedArtworkMarkup,
   eraserMaskPathMarkup,
+  escapeXmlText,
   extractEmbeddedRasterDataUrl,
+  extractRootSvg,
+  layerFrame,
   normalizeEmbeddedArtworkSvg,
+  pathLayerMarkup,
+  textLayerMarkup,
 } from './svgUtils';
+import { engravingTextFontSize, getEngravingFont } from '../constants/fonts';
 
 const CAPTURE_SIZE = 512;
 const MIN_REGION_SIZE = 3;
+const CAPTURE_INK = '#121214';
 
 export function normalizeCanvasRegion(
   x1: number,
@@ -152,20 +160,19 @@ export function buildRegionReplacementUpdates(
 /** Flatten PNG-in-SVG AI layers for reliable blob→canvas rasterization. */
 function embedRasterArtworkForCapture(
   el: CanvasElement,
-  rotation: string,
+  surfaceAspect: number,
   maskAttr: string
 ): string | null {
   const href = extractEmbeddedRasterDataUrl(el.content);
   if (!href) return null;
 
-  const halfW = (el.width / 2).toFixed(2);
-  const halfH = (el.height / 2).toFixed(2);
-
-  return `\n  <g transform="translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation})">\n    <g${maskAttr}>\n      <image x="${-halfW}" y="${-halfH}" width="${el.width}" height="${el.height}" href="${href}" preserveAspectRatio="xMidYMid meet"/>\n    </g>\n  </g>`;
+  const { frame, boxW, boxH } = layerFrame(el, surfaceAspect);
+  return `\n  <g transform="${frame}">\n    <g${maskAttr}>\n      <image x="${(-boxW / 2).toFixed(3)}" y="${(-boxH / 2).toFixed(3)}" width="${boxW.toFixed(3)}" height="${boxH.toFixed(3)}" href="${href}" preserveAspectRatio="xMidYMid meet"/>\n    </g>\n  </g>`;
 }
 
 function buildCanvasCompositeMarkup(
   elements: CanvasElement[],
+  surfaceAspect: number,
   region?: CanvasRegion
 ): { defs: string; content: string } {
   const sorted = [...elements]
@@ -178,50 +185,29 @@ function buildCanvasCompositeMarkup(
   let defs = '';
 
   for (const el of sorted) {
-    const sx = el.width / 100;
-    const sy = el.height / 100;
-    const rotation = el.rotation.toFixed(2);
+    const mask = buildLayerMask(el, erasers, surfaceAspect, 'cap-erase');
+    defs += mask.def;
 
-    const relatedErasers = erasers.filter((e) => e.targetElementId === el.id);
-    let maskAttr = '';
-    if (isErasableLayer(el.type) && relatedErasers.length > 0) {
-      const maskId = `cap-erase-${el.id}`;
-      const strokes = relatedErasers
-        .map((e) =>
-          eraserMaskPathMarkup({
-            content: e.content,
-            strokeWidth: e.strokeWidth ?? 8,
-            filled: e.eraserFill,
-          })
-        )
-        .join('');
-      defs += `<mask id="${maskId}" maskContentUnits="userSpaceOnUse"><rect x="0" y="0" width="100" height="100" fill="white"/>${strokes}</mask>`;
-      maskAttr = ` mask="url(#${maskId})"`;
-    }
-
-    if (el.type === 'svg_ai' || el.type === 'uploaded_image' || el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
-      const shiftX = (-50 * sx).toFixed(3);
-      const shiftY = (-50 * sy).toFixed(3);
-      const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) translate(${shiftX}, ${shiftY}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
-
-      if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
-        const rasterMarkup = embedRasterArtworkForCapture(el, rotation, maskAttr);
-        content += rasterMarkup ?? embedArtworkMarkup(el, rotation, maskAttr);
-      } else {
-        content += `<g transform="${transform}"><g${maskAttr}><path d="${el.content}" fill="none" stroke="#121214" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></g></g>`;
-      }
+    if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
+      const rasterMarkup = embedRasterArtworkForCapture(el, surfaceAspect, mask.attr);
+      content += rasterMarkup ?? embedArtworkMarkup(el, surfaceAspect, mask.attr);
+    } else if (el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
+      content += pathLayerMarkup(el, surfaceAspect, mask.attr, CAPTURE_INK);
     } else if (el.type === 'text') {
-      const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
-      const fontSize = Math.min(32, 160 / Math.max(el.content.length, 1));
-      content += `<g transform="${transform}"><text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" fill="#121214" font-weight="bold" font-family="serif">${escapeXml(el.content)}</text></g>`;
+      content += textLayerMarkup(el, surfaceAspect, CAPTURE_INK);
     }
   }
 
   return { defs, content };
 }
 
-function buildFullCanvasCaptureSvg(elements: CanvasElement[], w: number, h: number): string {
-  const { defs, content } = buildCanvasCompositeMarkup(elements);
+function buildFullCanvasCaptureSvg(
+  elements: CanvasElement[],
+  surfaceAspect: number,
+  w: number,
+  h: number
+): string {
+  const { defs, content } = buildCanvasCompositeMarkup(elements, surfaceAspect);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}" preserveAspectRatio="none">
   <defs>${defs}</defs>
   <style>path { vector-effect: non-scaling-stroke; }</style>
@@ -257,24 +243,23 @@ function clampCrop(
 }
 
 /** Build vector SVG content for a canvas region, normalized to local 0–100 space. */
-export function buildRegionVectorSvg(elements: CanvasElement[], region: CanvasRegion): string {
-  const { defs, content } = buildCanvasCompositeMarkup(elements, region);
+export function buildRegionVectorSvg(
+  elements: CanvasElement[],
+  region: CanvasRegion,
+  surfaceAspect: number
+): string {
+  const { defs, content } = buildCanvasCompositeMarkup(elements, surfaceAspect, region);
   const { left, top, width, height } = region;
   const sx = (100 / width).toFixed(4);
   const sy = (100 / height).toFixed(4);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  // The extracted markup already spans exactly the region, so it must fill the
+  // layer box rather than being letterboxed into it.
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none">
   <defs>${defs}</defs>
   <g transform="translate(${(-left * (100 / width)).toFixed(4)}, ${(-top * (100 / height)).toFixed(4)}) scale(${sx}, ${sy})">${content}</g>
 </svg>`;
 }
 
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 function buildArtworkMarkup(el: CanvasElement): string {
   if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
@@ -286,11 +271,11 @@ function buildArtworkMarkup(el: CanvasElement): string {
   }
 
   if (el.type === 'text') {
-    const fontSize = Math.min(32, 160 / Math.max(el.content.length, 1));
-    return `<text x="50" y="52" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" fill="#121214" font-weight="bold" font-family="serif">${escapeXml(el.content)}</text>`;
+    const font = getEngravingFont(el.color);
+    return `<text x="50" y="52" text-anchor="middle" dominant-baseline="middle" font-size="${engravingTextFontSize(el.content)}" fill="${CAPTURE_INK}" font-family="${font.family}" font-style="${font.style}" font-weight="${font.weight}">${escapeXmlText(el.content)}</text>`;
   }
 
-  return `<path d="${el.content}" fill="none" stroke="#121214" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  return `<path d="${el.content}" fill="none" stroke="${CAPTURE_INK}" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
 }
 
 function buildCaptureSvg(element: CanvasElement, eraserLayers: CanvasElement[]): string {
@@ -329,42 +314,27 @@ export async function captureRegionAsPngDataUrl(
   // SVG viewBox/clipPath was capturing a smaller fragment than the marquee
   // because nested images and non-square surfaces do not clip reliably.
   const { w, h } = surfaceRasterSize(surfaceAspect);
-  const svg = buildFullCanvasCaptureSvg(elements, w, h);
-  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
+  const svg = buildFullCanvasCaptureSvg(elements, surfaceAspect, w, h);
+  const fullPng = await rasterizeSvgToPng(svg, w, h);
+  const full = await loadImage(fullPng);
+  const { sx, sy, sw, sh } = clampCrop(
+    (region.left / 100) * w,
+    (region.top / 100) * h,
+    (region.width / 100) * w,
+    (region.height / 100) * h,
+    w,
+    h
+  );
 
-  try {
-    const img = await loadImage(url);
-    const full = document.createElement('canvas');
-    full.width = w;
-    full.height = h;
-    const fullCtx = full.getContext('2d');
-    if (!fullCtx) {
-      throw new Error('Could not create canvas context');
-    }
-    fullCtx.drawImage(img, 0, 0, w, h);
-
-    const { sx, sy, sw, sh } = clampCrop(
-      (region.left / 100) * w,
-      (region.top / 100) * h,
-      (region.width / 100) * w,
-      (region.height / 100) * h,
-      w,
-      h
-    );
-
-    const crop = document.createElement('canvas');
-    crop.width = sw;
-    crop.height = sh;
-    const cropCtx = crop.getContext('2d');
-    if (!cropCtx) {
-      throw new Error('Could not create canvas context');
-    }
-    cropCtx.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
-    return crop.toDataURL('image/png');
-  } finally {
-    URL.revokeObjectURL(url);
+  const crop = document.createElement('canvas');
+  crop.width = sw;
+  crop.height = sh;
+  const cropCtx = crop.getContext('2d');
+  if (!cropCtx) {
+    throw new Error('Could not create canvas context');
   }
+  cropCtx.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
+  return crop.toDataURL('image/png');
 }
 
 /** Rasterize a canvas element (with optional eraser masks) to a PNG data URL. */
@@ -380,24 +350,7 @@ export async function captureElementAsPngDataUrl(
     if (embedded) return embedded;
   }
 
-  const svg = buildCaptureSvg(element, eraserLayers);
-  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-
-  try {
-    const img = await loadImage(url);
-    const canvas = document.createElement('canvas');
-    canvas.width = CAPTURE_SIZE;
-    canvas.height = CAPTURE_SIZE;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('Could not create canvas context');
-    }
-    ctx.drawImage(img, 0, 0, CAPTURE_SIZE, CAPTURE_SIZE);
-    return canvas.toDataURL('image/png');
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  return rasterizeSvgToPng(buildCaptureSvg(element, eraserLayers), CAPTURE_SIZE, CAPTURE_SIZE);
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -409,29 +362,39 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Rasterize inline SVG to PNG for API calls (enhance expects raster input — not vectorization). */
-export async function rasterizeSvgMarkupToPng(svgMarkup: string, size = CAPTURE_SIZE): Promise<string> {
-  const normalized = svgMarkup.trim().startsWith('<svg')
-    ? svgMarkup
-    : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${svgMarkup}</svg>`;
-  const blob = new Blob([normalized], { type: 'image/svg+xml;charset=utf-8' });
-  const objectUrl = URL.createObjectURL(blob);
+async function rasterizeSvgToPng(svgMarkup: string, width: number, height: number): Promise<string> {
+  const svg = extractRootSvg(svgMarkup);
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const blobUrl = URL.createObjectURL(blob);
+  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
   try {
-    const img = await loadImage(objectUrl);
+    let img: HTMLImageElement;
+    try {
+      img = await loadImage(blobUrl);
+    } catch {
+      img = await loadImage(dataUrl);
+    }
     const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
-      throw new Error('Canvas not available');
+      throw new Error('Could not create canvas context');
     }
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, size, size);
-    ctx.drawImage(img, 0, 0, size, size);
+    ctx.drawImage(img, 0, 0, width, height);
     return canvas.toDataURL('image/png');
   } finally {
-    URL.revokeObjectURL(objectUrl);
+    URL.revokeObjectURL(blobUrl);
   }
+}
+
+/** Rasterize inline SVG to PNG for API calls (enhance expects raster input — not vectorization). */
+export async function rasterizeSvgMarkupToPng(svgMarkup: string, size = CAPTURE_SIZE): Promise<string> {
+  const normalized = /<svg\b/i.test(svgMarkup)
+    ? extractRootSvg(svgMarkup)
+    : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${svgMarkup}</svg>`;
+  return rasterizeSvgToPng(normalized, size, size);
 }
 
 /** Read a File/Blob as a data URL (for raster uploads sent to backend enhance). */

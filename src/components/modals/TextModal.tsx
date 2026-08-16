@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Type, Check, Sparkles } from 'lucide-react';
-import { FONT_OPTIONS, TEXT_SUGGESTIONS } from '../../constants/fonts';
+import { FONT_OPTIONS, TEXT_SUGGESTIONS, getEngravingFont } from '../../constants/fonts';
+
+function engravingFontStyle(fontId: string): React.CSSProperties {
+  const font = getEngravingFont(fontId);
+  return { fontFamily: font.family, fontStyle: font.style, fontWeight: font.weight };
+}
 
 interface TextModalProps {
   isOpen: boolean;
@@ -108,7 +113,7 @@ export const TextModal: React.FC<TextModalProps> = ({ isOpen, onClose, onAddText
                         : 'bg-[#FAF8F5] text-[#121214] border-[#E8E2D5] hover:border-[#C5A059]'
                     }`}
                   >
-                    <span className={`block text-xs ${f.fontClass}`}>{f.name}</span>
+                    <span className="block text-xs" style={engravingFontStyle(f.id)}>{f.name}</span>
                   </button>
                 );
               })}
@@ -121,7 +126,7 @@ export const TextModal: React.FC<TextModalProps> = ({ isOpen, onClose, onAddText
               Engraving Preview
             </label>
             <div className="w-full h-20 bg-[#FAF8F5] border border-[#E8E2D5] rounded-xl flex items-center justify-center p-3 text-center">
-              <span className={`text-xl font-bold text-[#121214] ${FONT_OPTIONS.find(f => f.id === selectedFont)?.fontClass}`}>
+              <span className="text-xl text-[#121214]" style={engravingFontStyle(selectedFont)}>
                 {textInput || 'Your Text Here'}
               </span>
             </div>

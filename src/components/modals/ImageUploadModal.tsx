@@ -1,8 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Check, Loader2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, Check, Loader2, Sparkles } from 'lucide-react';
 import { SAMPLE_MOTIFS } from '../../data/sampleMotifs';
-import { fetchAiEnhance } from '../../services/aiService';
+import { fetchAiEnhance, fetchVectorize } from '../../services/aiService';
 import { readFileAsDataUrl } from '../../utils/canvasCapture';
+import {
+  engravingImageAcceptString,
+  engravingImageTypesLabel,
+  validateEngravingImageUpload,
+} from '../../utils/uploadConstraints';
 
 const UPLOAD_ENHANCE_OPTIONS = ['photo_lineart', 'stylize'] as const;
 
@@ -22,6 +27,8 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
   const [processedSvg, setProcessedSvg] = useState<string | null>(null);
   const [vectorName, setVectorName] = useState<string>('Uploaded Vector Motif');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isEnhancing, setIsEnhancing] = useState<boolean>(false);
+  const [rasterDataUrl, setRasterDataUrl] = useState<string | null>(null);
   const [processError, setProcessError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -32,6 +39,8 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
       setPreviewSrc(null);
       setProcessedSvg(null);
       setVectorName('Uploaded Vector Motif');
+      setIsEnhancing(false);
+      setRasterDataUrl(null);
       setProcessError(null);
     }
   }, [isOpen]);
@@ -43,7 +52,8 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
 
     try {
       const dataUrl = await readFileAsDataUrl(file);
-      const result = await fetchAiEnhance(dataUrl, [...UPLOAD_ENHANCE_OPTIONS], '');
+      setRasterDataUrl(dataUrl);
+      const result = await fetchVectorize(dataUrl);
       setProcessedSvg(result.svgCode);
     } catch (e) {
       setProcessError(e instanceof Error ? e.message : 'Processing failed');
@@ -52,16 +62,46 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
     }
   };
 
+  const handleEnhanceWithAi = async () => {
+    if (!rasterDataUrl) return;
+    setIsEnhancing(true);
+    setProcessError(null);
+
+    try {
+      const result = await fetchAiEnhance(rasterDataUrl, [...UPLOAD_ENHANCE_OPTIONS], '');
+      setProcessedSvg(result.svgCode);
+    } catch (e) {
+      setProcessError(e instanceof Error ? e.message : 'AI enhance failed');
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Allow re-selecting the same file after a rejected attempt.
+    e.target.value = '';
     if (!file) return;
+
+    const validationError = validateEngravingImageUpload(file);
+    if (validationError) {
+      setProcessError(validationError);
+      setSelectedFile(null);
+      setPreviewSrc(null);
+      setProcessedSvg(null);
+      setRasterDataUrl(null);
+      return;
+    }
 
     setSelectedFile(file);
     const cleanName = file.name.replace(/\.[^/.]+$/, '');
     setVectorName(cleanName);
     setProcessError(null);
 
-    if (file.type === 'image/svg+xml') {
+    const isSvg =
+      file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+
+    if (isSvg) {
       const reader = new FileReader();
       reader.onload = (event) => {
         let text = (event.target?.result as string) || '';
@@ -105,7 +145,7 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
             </div>
             <div>
               <h2 className="font-serif font-bold text-xl text-[#121214]">Upload Image</h2>
-              <p className="text-[#6E6A63] text-xs">Raster files are AI-enhanced and converted to SVG on the server</p>
+              <p className="text-[#6E6A63] text-xs">Images are traced to SVG on the server. Use AI enhance for photos.</p>
             </div>
           </div>
 
@@ -128,7 +168,7 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
               </div>
               <div>
                 <p className="text-sm font-bold text-[#121214]">Click to upload or drag image file</p>
-                <p className="text-xs text-[#6E6A63] mt-0.5">Supports PNG, JPG, WebP, SVG</p>
+                <p className="text-xs text-[#6E6A63] mt-0.5">Supports {engravingImageTypesLabel()}</p>
               </div>
               <span className="px-5 py-2 bg-[#121214] text-white rounded-full text-[10px] font-bold uppercase tracking-widest shadow-2xs hover:bg-[#C5A059] transition-colors">
                 Browse Files
@@ -136,7 +176,7 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,.svg"
+                accept={engravingImageAcceptString()}
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -162,6 +202,12 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
                 ))}
               </div>
             </div>
+
+            {processError && (
+              <p className="text-xs text-red-600 font-medium bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                {processError}
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
@@ -170,7 +216,7 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
                 Laser Engraving Vector Output
               </span>
               <div className="w-48 h-48 bg-white border border-[#E8E2D5] rounded-xl p-3 flex items-center justify-center shadow-inner overflow-hidden [&>svg]:w-full [&>svg]:h-full">
-                {isProcessing ? (
+                {isProcessing || isEnhancing ? (
                   <Loader2 className="w-8 h-8 text-[#C5A059] animate-spin" />
                 ) : processedSvg ? (
                   <div dangerouslySetInnerHTML={{ __html: processedSvg }} className="w-full h-full" />
@@ -180,13 +226,26 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
               </div>
             </div>
 
-            {selectedFile && selectedFile.type !== 'image/svg+xml' && (
-              <div className="flex items-center justify-end pt-1">
+            {selectedFile && selectedFile.type !== 'image/svg+xml' && !selectedFile.name.toLowerCase().endsWith('.svg') && (
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  onClick={handleEnhanceWithAi}
+                  disabled={!rasterDataUrl || isProcessing || isEnhancing}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-full border border-[#C5A059]/40 bg-[#FBF8F1] text-[#C5A059] text-[10px] font-bold uppercase tracking-wider hover:border-[#C5A059] hover:bg-[#FAF3E4] transition-colors disabled:opacity-50"
+                >
+                  {isEnhancing ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  <span>Enhance with AI</span>
+                </button>
                 <button
                   onClick={() => {
                     setPreviewSrc(null);
                     setSelectedFile(null);
                     setProcessedSvg(null);
+                    setRasterDataUrl(null);
                   }}
                   className="text-[10px] uppercase tracking-wider text-[#C5A059] font-bold hover:underline"
                 >
@@ -212,7 +271,7 @@ export const ImageUploadModal: React.FC<ImageUploadModalProps> = ({
           </button>
           <button
             onClick={handleInsert}
-            disabled={!processedSvg || isProcessing}
+            disabled={!processedSvg || isProcessing || isEnhancing}
             className="flex-1 py-3 px-4 rounded-full bg-[#121214] text-white font-bold text-xs uppercase tracking-widest hover:bg-[#C5A059] transition-colors shadow-2xs disabled:opacity-50 flex items-center justify-center space-x-1.5"
           >
             <Check className="w-4 h-4 text-[#C5A059]" />

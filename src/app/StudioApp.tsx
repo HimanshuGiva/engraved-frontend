@@ -28,7 +28,7 @@ import {
 } from '../types';
 import { buildRegionReplacementUpdates, buildRegionVectorSvg, regionCenter } from '../utils/canvasCapture';
 import { buildSavedDesignBundle } from '../utils/designBundle';
-import { generateProductionSvg, svgToFillElementBox } from '../utils/svgUtils';
+import { extractRootSvg, generateProductionSvg, svgToFillElementBox } from '../utils/svgUtils';
 import { collectProductionIssues } from '../utils/svgValidation';
 
 type StudioStep = 'select' | 'studio' | 'preview' | 'confirm';
@@ -60,6 +60,10 @@ export default function StudioApp() {
   } = useCanvasHistory();
 
   const modals = useStudioModals();
+
+  const surfaceAspect = selectedJewelry
+    ? getEngravingSurfaceAspect(selectedJewelry.constraints.shape)
+    : 1;
 
   const clearSelection = useCallback(() => setSelectedElementId(null), []);
   useClearInvalidSelection(selectedElementId, currentElements, clearSelection);
@@ -246,7 +250,7 @@ export default function StudioApp() {
       height: region.height,
       rotation: 0,
       zIndex: currentElements.length + 1,
-      content: buildRegionVectorSvg(currentElements, region),
+      content: buildRegionVectorSvg(currentElements, region, surfaceAspect),
     });
   };
 
@@ -500,11 +504,7 @@ export default function StudioApp() {
           }
           region={modals.enhancingRegion ?? undefined}
           canvasElements={currentElements}
-          surfaceAspect={
-            selectedJewelry
-              ? getEngravingSurfaceAspect(selectedJewelry.constraints.shape)
-              : 1
-          }
+          surfaceAspect={surfaceAspect}
           onApply={handleApplyEnhance}
         />
       )}
@@ -530,7 +530,7 @@ export default function StudioApp() {
             height: 45,
             rotation: 0,
             zIndex: currentElements.length + 1,
-            content: svgContent,
+            content: extractRootSvg(svgContent),
           });
         }}
       />
