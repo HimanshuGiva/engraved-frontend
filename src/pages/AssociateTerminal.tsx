@@ -11,7 +11,7 @@ import {
 import { isStationOnline, type LaserStation } from '../services/associateTypes';
 import { getAppOrder } from '../services/orderService';
 import { ApiError } from '../services/apiClient';
-import { bundleFromOrder } from '../utils/designBundle';
+import { bundleFromOrderAsync } from '../utils/designBundle';
 import { parseAssociateOrderId } from '../utils/routing';
 import { AssociateOrderPanel } from '../components/associate/AssociateOrderPanel';
 import { Search, RefreshCw, Radio, ListOrdered } from 'lucide-react';
@@ -30,7 +30,7 @@ export const AssociateTerminal: React.FC = () => {
   const fetchOrderStatus = useCallback(async (orderId: string) => {
     if (hasAssociateApiAccess()) {
       const { order, job } = await lookupAssociateOrder(orderId);
-      const bundle = bundleFromOrder(order, job?.error_message ?? null);
+      const bundle = await bundleFromOrderAsync(order, job?.error_message ?? null);
       if (!bundle) {
         throw new Error(`Unknown SKU "${order.sku_code}" in order`);
       }
@@ -38,7 +38,7 @@ export const AssociateTerminal: React.FC = () => {
     }
 
     const order = await getAppOrder(orderId);
-    const bundle = bundleFromOrder(order);
+    const bundle = await bundleFromOrderAsync(order);
     if (!bundle) {
       throw new Error(`Unknown SKU "${order.sku_code}" in order`);
     }

@@ -9,7 +9,7 @@ import {
   hasAssociateApiAccess,
   lookupAssociateOrder,
 } from '../../services/associateService';
-import { bundleFromOrder } from '../../utils/designBundle';
+import { bundleFromOrderAsync } from '../../utils/designBundle';
 import { downloadFile } from '../../utils/svgUtils';
 import { Download, CheckCircle, RefreshCw } from 'lucide-react';
 
@@ -36,7 +36,7 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
     const interval = window.setInterval(async () => {
       try {
         const { order, job } = await lookupAssociateOrder(liveBundle.designId);
-        const updated = bundleFromOrder(order, job?.error_message ?? null);
+        const updated = await bundleFromOrderAsync(order, job?.error_message ?? null);
         if (updated) setLiveBundle(updated);
       } catch {
         // ignore poll errors

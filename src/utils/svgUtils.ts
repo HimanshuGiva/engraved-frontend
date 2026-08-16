@@ -205,7 +205,11 @@ interface CompositeLayers {
   rasterContent: string;
 }
 
-function buildCompositeLayers(elements: CanvasElement[], _jewelry: JewelryItem): CompositeLayers {
+async function buildCompositeLayers(
+  elements: CanvasElement[],
+  _jewelry: JewelryItem,
+  options: { convertTextToPaths: boolean; allowRaster: boolean }
+): Promise<CompositeLayers> {
   const sorted = [...elements].filter((el) => el.type !== 'eraser').sort((a, b) => a.zIndex - b.zIndex);
   const erasers = elements.filter((el) => el.type === 'eraser');
 
@@ -236,16 +240,26 @@ function buildCompositeLayers(elements: CanvasElement[], _jewelry: JewelryItem):
     const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) translate(${shiftX}, ${shiftY}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
 
     if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
-      const markup = embedArtworkMarkup(el, rotation, maskAttr);
       if (isRasterArtwork(el.content)) {
-        rasterContent += markup;
+        if (!options.allowRaster) {
+          throw new Error(
+            `Layer "${el.name}" contains an embedded raster image. Vectorize or remove it before engraving.`
+          );
+        }
+        rasterContent += embedArtworkMarkup(el, rotation, maskAttr);
       } else {
-        vectorContent += markup;
+        vectorContent += embedArtworkMarkup(el, rotation, maskAttr);
       }
     } else if (el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
       vectorContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${el.content}" fill="none" stroke="#111111" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" />\n    </g>\n  </g>`;
     } else if (el.type === 'text') {
-      vectorContent += `\n  <g transform="${transform}">\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n  </g>`;
+      if (options.convertTextToPaths) {
+        const { textToSvgPath } = await import('./textToPath');
+        const d = await textToSvgPath(el.content, el.color, 16);
+        vectorContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${d}" fill="#111111" stroke="none" />\n    </g>\n  </g>`;
+      } else {
+        vectorContent += `\n  <g transform="${transform}">\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n  </g>`;
+      }
     }
   }
 
@@ -253,11 +267,70 @@ function buildCompositeLayers(elements: CanvasElement[], _jewelry: JewelryItem):
 }
 
 /**
- * Combines all canvas elements into a single clean, production-ready vector SVG file.
+ * Preview / canvas composite — may include &lt;text&gt; and rasters for display.
  */
 export function generateCompositeSvg(elements: CanvasElement[], jewelry: JewelryItem): string {
-  const { maskDefs, vectorContent, rasterContent } = buildCompositeLayers(elements, jewelry);
+  // Sync preview path: text stays as <text> for speed; production uses generateProductionSvg.
+  let maskDefs = '';
+  let vectorContent = '';
+  let rasterContent = '';
 
+  const sorted = [...elements].filter((el) => el.type !== 'eraser').sort((a, b) => a.zIndex - b.zIndex);
+  const erasers = elements.filter((el) => el.type === 'eraser');
+
+  for (const el of sorted) {
+    const sx = el.width / 100;
+    const sy = el.height / 100;
+    const rotation = el.rotation.toFixed(2);
+    const relatedErasers = erasers.filter((e) => e.targetElementId === el.id);
+    let maskAttr = '';
+    if (isErasableLayer(el.type) && relatedErasers.length > 0) {
+      const maskId = `erase-mask-${el.id}`;
+      const strokes = relatedErasers
+        .map((e) =>
+          eraserMaskPathMarkup({
+            content: e.content,
+            strokeWidth: e.strokeWidth ?? 8,
+            filled: e.eraserFill,
+          })
+        )
+        .join('\n      ');
+      maskDefs += `\n    <mask id="${maskId}" maskContentUnits="userSpaceOnUse">\n      <rect x="0" y="0" width="100" height="100" fill="white" />\n      ${strokes}\n    </mask>`;
+      maskAttr = ` mask="url(#${maskId})"`;
+    }
+    const shiftX = (-50 * sx).toFixed(3);
+    const shiftY = (-50 * sy).toFixed(3);
+    const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) translate(${shiftX}, ${shiftY}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
+
+    if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
+      const markup = embedArtworkMarkup(el, rotation, maskAttr);
+      if (isRasterArtwork(el.content)) rasterContent += markup;
+      else vectorContent += markup;
+    } else if (el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
+      vectorContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${el.content}" fill="none" stroke="#111111" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" />\n    </g>\n  </g>`;
+    } else if (el.type === 'text') {
+      vectorContent += `\n  <g transform="${transform}">\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n  </g>`;
+    }
+  }
+
+  return wrapProductionSvg(jewelry, maskDefs, vectorContent + rasterContent);
+}
+
+/**
+ * Laser-ready SVG: text converted to paths, rasters rejected.
+ */
+export async function generateProductionSvg(
+  elements: CanvasElement[],
+  jewelry: JewelryItem
+): Promise<string> {
+  const { maskDefs, vectorContent } = await buildCompositeLayers(elements, jewelry, {
+    convertTextToPaths: true,
+    allowRaster: false,
+  });
+  return wrapProductionSvg(jewelry, maskDefs, vectorContent);
+}
+
+function wrapProductionSvg(jewelry: JewelryItem, maskDefs: string, content: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none" overflow="visible">
   <desc>GIVA Live-Engrave Production Vector Export - SKU: ${jewelry.sku} - Safe Area: ${jewelry.constraints.safeWidthMm}mm x ${jewelry.constraints.safeHeightMm}mm</desc>
   <defs>${maskDefs}
@@ -266,7 +339,7 @@ export function generateCompositeSvg(elements: CanvasElement[], jewelry: Jewelry
     path, circle, rect, polygon, text { vector-effect: non-scaling-stroke; }
   </style>
   <g id="production-engraving-layer" fill="none" stroke="#111111">
-    ${vectorContent}${rasterContent}
+    ${content}
   </g>
 </svg>`;
 }
@@ -340,7 +413,48 @@ function buildRasterEtchFilter(id: string, palette: EtchPalette): string {
  * not flat black ink on the surface.
  */
 export function generatePreviewCompositeSvg(elements: CanvasElement[], jewelry: JewelryItem): string {
-  const { maskDefs, vectorContent, rasterContent } = buildCompositeLayers(elements, jewelry);
+  // Sync preview: keep <text> for speed; production path converts to paths.
+  const sorted = [...elements].filter((el) => el.type !== 'eraser').sort((a, b) => a.zIndex - b.zIndex);
+  const erasers = elements.filter((el) => el.type === 'eraser');
+  let maskDefs = '';
+  let vectorContent = '';
+  let rasterContent = '';
+
+  for (const el of sorted) {
+    const sx = el.width / 100;
+    const sy = el.height / 100;
+    const rotation = el.rotation.toFixed(2);
+    const relatedErasers = erasers.filter((e) => e.targetElementId === el.id);
+    let maskAttr = '';
+    if (isErasableLayer(el.type) && relatedErasers.length > 0) {
+      const maskId = `erase-mask-${el.id}`;
+      const strokes = relatedErasers
+        .map((e) =>
+          eraserMaskPathMarkup({
+            content: e.content,
+            strokeWidth: e.strokeWidth ?? 8,
+            filled: e.eraserFill,
+          })
+        )
+        .join('\n      ');
+      maskDefs += `\n    <mask id="${maskId}" maskContentUnits="userSpaceOnUse">\n      <rect x="0" y="0" width="100" height="100" fill="white" />\n      ${strokes}\n    </mask>`;
+      maskAttr = ` mask="url(#${maskId})"`;
+    }
+    const shiftX = (-50 * sx).toFixed(3);
+    const shiftY = (-50 * sy).toFixed(3);
+    const transform = `translate(${el.x.toFixed(2)}, ${el.y.toFixed(2)}) rotate(${rotation}) translate(${shiftX}, ${shiftY}) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
+
+    if (el.type === 'svg_ai' || el.type === 'uploaded_image') {
+      const markup = embedArtworkMarkup(el, rotation, maskAttr);
+      if (isRasterArtwork(el.content)) rasterContent += markup;
+      else vectorContent += markup;
+    } else if (el.type === 'freehand_draw' || el.type === 'handwriting' || el.type === 'shape') {
+      vectorContent += `\n  <g transform="${transform}">\n    <g${maskAttr}>\n    <path d="${el.content}" fill="none" stroke="#111111" stroke-width="${el.strokeWidth ?? 1}" stroke-linecap="round" stroke-linejoin="round" />\n    </g>\n  </g>`;
+    } else if (el.type === 'text') {
+      vectorContent += `\n  <g transform="${transform}">\n    <text x="0" y="0" font-family="'Playfair Display', serif" font-size="16" font-weight="600" fill="#111111" text-anchor="middle" dominant-baseline="middle">${el.content}</text>\n  </g>`;
+    }
+  }
+
   const palette = getEtchPalette(jewelry.material);
   const vectorFilter = buildLaserEtchFilter('preview-laser-etch', palette);
   const rasterFilter = buildRasterEtchFilter('preview-raster-etch', palette);

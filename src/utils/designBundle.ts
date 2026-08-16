@@ -1,5 +1,5 @@
-import { JEWELRY_CATALOG } from '../data/jewelryCatalog';
 import { normalizeFulfillmentStatus } from '../constants/fulfillmentStatus';
+import { fetchJewelryCatalog, findJewelryByBackendSku } from '../services/catalogService';
 import { AppEngravingOrder } from '../services/orderService';
 import { CanvasElement, JewelryItem, OrderChannel, SavedDesignBundle } from '../types';
 
@@ -35,7 +35,7 @@ export function bundleFromOrder(
   order: AppEngravingOrder,
   jobError?: string | null
 ): SavedDesignBundle | null {
-  const jewelry = JEWELRY_CATALOG.find((j) => j.backendSkuCode === order.sku_code);
+  const jewelry = findJewelryByBackendSku(order.sku_code);
   if (!jewelry) return null;
 
   return buildSavedDesignBundle({
@@ -49,4 +49,13 @@ export function bundleFromOrder(
     fulfillmentStatus: order.fulfillment_status,
     jobError,
   });
+}
+
+/** Ensures catalog is loaded from the API, then builds a design bundle. */
+export async function bundleFromOrderAsync(
+  order: AppEngravingOrder,
+  jobError?: string | null
+): Promise<SavedDesignBundle | null> {
+  await fetchJewelryCatalog();
+  return bundleFromOrder(order, jobError);
 }
