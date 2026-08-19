@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sparkles, Mic, MicOff, RefreshCw, ArrowRight } from 'lucide-react';
 import { AiOption, JewelryItem } from '../../types';
 import { fetchAiEngravingOptions, fetchAiRefineOptions } from '../../services/aiService';
+import { extractRootSvg } from '../../utils/svgUtils';
 
 interface AiCreateModalProps {
   isOpen: boolean;
@@ -234,13 +235,19 @@ export const AiCreateModal: React.FC<AiCreateModalProps> = ({
                       </span>
                     </div>
 
-                    {/* PNG preview — img is reliable; SVG-wrapped PNGs often fail in modals */}
                     <div className="w-full h-44 bg-white rounded-xl p-4 flex items-center justify-center border border-[#E8E2D5] overflow-hidden group-hover:scale-102 transition-transform">
-                      <img
-                        src={opt.previewUrl}
-                        alt={opt.title}
-                        className="max-w-full max-h-full w-full h-full object-contain"
-                      />
+                      {opt.svgCode ? (
+                        <div
+                          className="w-full h-full text-[#121214] [&>svg]:w-full [&>svg]:h-full [&>svg]:max-w-full [&>svg]:max-h-full"
+                          dangerouslySetInnerHTML={{ __html: extractRootSvg(opt.svgCode) }}
+                        />
+                      ) : (
+                        <img
+                          src={opt.previewUrl}
+                          alt={opt.title}
+                          className="max-w-full max-h-full w-full h-full object-contain"
+                        />
+                      )}
                     </div>
                   </div>
 

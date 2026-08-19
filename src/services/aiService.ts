@@ -1,11 +1,13 @@
 import { AiOption, JewelryItem } from '../types';
 import { EnhanceOption } from '../constants/enhanceOptions';
 import { rasterizeSvgMarkupToPng } from '../utils/canvasCapture';
-import { svgToDataUrl } from '../utils/svg/dataUrl';
+import { svgToDataUrl } from '../utils/svgUtils';
 import { apiFetch } from './apiClient';
 
 interface BackendGenerateImage {
   svg: string;
+  b64?: string;
+  content_type?: string;
 }
 
 interface BackendGenerateResponse {
@@ -36,7 +38,9 @@ export async function fetchAiEngravingOptions(
       id: `opt-${idx}-${Date.now()}`,
       title: idx === 0 ? 'Option A' : 'Option B',
       svgCode: img.svg,
-      previewUrl: svgToDataUrl(img.svg),
+      previewUrl: img.b64
+        ? `data:image/png;base64,${img.b64}`
+        : svgToDataUrl(img.svg),
       styleTag: STYLE_TAGS[idx] ?? 'AI Generated',
     };
   });
