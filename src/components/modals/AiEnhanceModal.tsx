@@ -13,6 +13,7 @@ import {
   captureElementAsPngDataUrl,
   captureRegionAsPngDataUrl,
 } from '../../utils/canvasCapture';
+import { extractRootSvg } from '../../utils/svgUtils';
 
 interface AiEnhanceModalProps {
   isOpen: boolean;
@@ -182,11 +183,10 @@ export const AiEnhanceModal: React.FC<AiEnhanceModalProps> = ({
             >
               {isLoading ? (
                 <div className="w-6 h-6 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
-              ) : resultPreviewUrl ? (
-                <img
-                  src={resultPreviewUrl}
-                  alt="Enhanced preview"
-                  className="w-full h-full min-w-0 min-h-0 object-contain"
+              ) : resultSvg ? (
+                <div
+                  className="w-full h-full text-[#121214] [&>svg]:w-full [&>svg]:h-full [&>svg]:max-w-full [&>svg]:max-h-full"
+                  dangerouslySetInnerHTML={{ __html: extractRootSvg(resultSvg) }}
                 />
               ) : (
                 <span className="text-[10px] text-[#8A857C] text-center px-2">Run enhance to preview</span>

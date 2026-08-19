@@ -1,5 +1,5 @@
 import { GiftMessage, MessageContentType } from '../types';
-import { svgToDataUrl } from '../utils/svg/dataUrl';
+import { svgToDataUrl } from '../utils/svgUtils';
 import { apiFetch, apiFetchHeaders, apiFetchText, ApiError } from './apiClient';
 
 const ACCESS_TOKEN = (import.meta.env.VITE_ACCESS_TOKEN as string | undefined) ?? '';

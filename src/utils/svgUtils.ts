@@ -172,6 +172,10 @@ export function extractRootSvg(content: string): string {
   return cleaned.slice(start, end + 6);
 }
 
+export function svgToDataUrl(svgCode: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(extractRootSvg(svgCode))}`;
+}
+
 function svgInnerMarkup(content: string): { viewBox: string; fit: string; inner: string } {
   const root = extractRootSvg(content);
   const viewBox = root.match(/viewBox=["']([^"']+)["']/i)?.[1] ?? '0 0 100 100';
