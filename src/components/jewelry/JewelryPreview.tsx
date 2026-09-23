@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { JewelryItem, CanvasElement } from '../../types';
 import { generatePreviewCompositeSvg } from '../../utils/svgUtils';
-import { ENGRAVING_SURFACE_RADIUS, getEngravingSurfaceAspect } from '../../constants/engravingSurface';
+import { ENGRAVING_SURFACE_RADIUS, getEngravingSurfaceStyle, getJewelrySurfaceAspect } from '../../constants/engravingSurface';
 
 import { Sparkles, ArrowLeft, Check, ZoomIn, ShieldCheck } from 'lucide-react';
 
@@ -85,7 +85,7 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
   const previewSvg = generatePreviewCompositeSvg(elements, jewelry);
   const shape = jewelry.constraints.shape;
   const shapeRadius = ENGRAVING_SURFACE_RADIUS[shape];
-  const surfaceAspect = getEngravingSurfaceAspect(shape);
+  const surfaceStyle = getEngravingSurfaceStyle(jewelry.constraints);
   const material = getMaterialLayers(jewelry.material);
   const bail = getBailStyle(jewelry.material);
 
@@ -153,10 +153,7 @@ export const JewelryPreview: React.FC<JewelryPreviewProps> = ({
             <div
               className="relative flex-shrink-0 transition-transform duration-500"
               style={{
-                aspectRatio: `${surfaceAspect}`,
-                width: `min(100%, calc(min(50vh, 360px) * ${surfaceAspect}))`,
-                maxHeight: 'min(50vh, 360px)',
-                borderRadius: shapeRadius,
+                ...surfaceStyle,
                 transform: `scale(${zoomLevel}) translateZ(0)`,
                 transformOrigin: 'center top',
                 boxShadow: pendantShadow,

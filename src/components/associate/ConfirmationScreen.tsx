@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { SavedDesignBundle } from '../../types';
 import {
@@ -10,6 +10,8 @@ import {
   lookupAssociateOrder,
 } from '../../services/associateService';
 import { bundleFromOrderAsync } from '../../utils/designBundle';
+import { toCustomerDownloadSvg } from '../../utils/customerDownloadSvg';
+import { getEngravingSurfaceStyle } from '../../constants/engravingSurface';
 import { downloadFile } from '../../utils/svgUtils';
 import { Download, CheckCircle, RefreshCw } from 'lucide-react';
 
@@ -55,12 +57,16 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
     });
   }, []);
 
+  const downloadSvg = useMemo(
+    () => toCustomerDownloadSvg(liveBundle.compositeSvg, liveBundle.jewelry),
+    [liveBundle.compositeSvg, liveBundle.jewelry]
+  );
+
+  const previewStyle = getEngravingSurfaceStyle(liveBundle.jewelry.constraints, 280);
+  const downloadBaseName = `${liveBundle.designId}-${liveBundle.jewelry.sku}`;
+
   const handleDownloadSvg = () => {
-    downloadFile(
-      liveBundle.compositeSvg,
-      `${liveBundle.designId}-${liveBundle.jewelry.sku}.svg`,
-      'image/svg+xml'
-    );
+    downloadFile(downloadSvg, `${downloadBaseName}.svg`, 'image/svg+xml');
   };
 
   const channel = liveBundle.channel ?? 'pos';
@@ -121,16 +127,33 @@ export const ConfirmationScreen: React.FC<ConfirmationScreenProps> = ({
           </div>
         </div>
 
+        <div className="space-y-2">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[#8A857C]">Your design</div>
+          <div className="w-full flex justify-center">
+            <div
+              className="bg-[#FAF8F5] rounded-xl p-3 border border-[#E8E2D5] overflow-hidden [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
+              style={previewStyle}
+              dangerouslySetInnerHTML={{ __html: downloadSvg }}
+            />
+          </div>
+          <p className="text-[10px] text-[#8A857C] text-center">
+            Preview matches your download — {liveBundle.jewelry.constraints.safeWidthMm}×
+            {liveBundle.jewelry.constraints.safeHeightMm} mm engraving area at readable scale.
+          </p>
+        </div>
+
         <div className="pt-2 flex flex-wrap gap-4">
           <button
+            type="button"
             onClick={handleDownloadSvg}
             className="flex-1 py-4 px-6 rounded-full bg-[#121214] hover:bg-[#C5A059] text-white font-bold uppercase tracking-[0.15em] text-xs flex items-center justify-center space-x-2 transition-all shadow-md border border-[#121214]"
           >
             <Download className="w-4 h-4 text-[#C5A059] group-hover:text-white" />
-            <span>Download Your Art</span>
+            <span>Download SVG</span>
           </button>
 
           <button
+            type="button"
             onClick={onNewDesign}
             className="py-4 px-6 rounded-full bg-[#FAF8F5] hover:bg-[#121214] hover:text-[#C5A059] text-[#121214] font-bold text-xs uppercase tracking-wider transition-colors border border-[#E8E2D5]"
           >

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { getEngravingSurfaceStyle } from '../../constants/engravingSurface';
 import { SavedDesignBundle } from '../../types';
 import {
   getFulfillmentStatusMeta,
@@ -31,6 +32,22 @@ export const AssociateOrderPanel: React.FC<AssociateOrderPanelProps> = ({
   const [markDecisionSent, setMarkDecisionSent] = useState<'approve' | 'reject' | null>(null);
 
   const fulfillmentStatus = bundle.fulfillmentStatus ?? 'submitted';
+
+  useEffect(() => {
+    setMarkDecisionSent(null);
+    setActionError('');
+  }, [bundle.designId]);
+
+  useEffect(() => {
+    if (
+      fulfillmentStatus === 'completed' ||
+      fulfillmentStatus === 'failed' ||
+      fulfillmentStatus === 'cancelled' ||
+      fulfillmentStatus === 'queued'
+    ) {
+      setMarkDecisionSent(null);
+    }
+  }, [fulfillmentStatus]);
   const channel = bundle.channel ?? 'pos';
   const statusMeta = getFulfillmentStatusMeta(fulfillmentStatus, channel);
   const canManageLaser = hasAssociateApiAccess() && channel === 'pos';
@@ -93,7 +110,15 @@ export const AssociateOrderPanel: React.FC<AssociateOrderPanelProps> = ({
     try {
       await confirmAssociateMark(bundle.designId, decision);
       setMarkDecisionSent(decision);
+      if (decision === 'reject') {
+        onBundleUpdated({
+          ...bundle,
+          fulfillmentStatus: 'failed',
+          jobError: 'Operator rejected mark after red-light preview',
+        });
+      }
     } catch (err) {
+      setMarkDecisionSent(null);
       setActionError(
         err instanceof ApiError
           ? err.message
@@ -105,6 +130,18 @@ export const AssociateOrderPanel: React.FC<AssociateOrderPanelProps> = ({
       setIsConfirming(false);
     }
   };
+
+  const showRequeue =
+    canManageLaser &&
+    (fulfillmentStatus === 'failed' ||
+      (fulfillmentStatus === 'marking' && markDecisionSent === 'approve'));
+
+  const decisionFeedback =
+    markDecisionSent === 'approve'
+      ? 'Approve sent — LaserAgent should mark within a few seconds. Status updates automatically.'
+      : markDecisionSent === 'reject'
+        ? 'Mark rejected — order marked failed. Requeue below to try again after fixing alignment.'
+        : null;
 
   return (
     <div className={`space-y-5 bg-[#FAF8F5] rounded-2xl border border-[#E8E2D5] text-xs ${compact ? 'p-4' : 'p-5'}`}>
@@ -154,16 +191,27 @@ export const AssociateOrderPanel: React.FC<AssociateOrderPanelProps> = ({
 
       <div className="space-y-2">
         <div className="text-[#8A857C] font-bold uppercase text-[10px] tracking-wider">Production SVG Vector Beam Path</div>
-        <div
-          className="w-full h-36 bg-white rounded-xl p-3 border border-[#E8E2D5] flex items-center justify-center text-[#121214]"
-          dangerouslySetInnerHTML={{ __html: bundle.compositeSvg }}
-        />
+        <div className="w-full flex justify-center">
+          <div
+            className="bg-white rounded-xl p-2 border border-[#E8E2D5] overflow-hidden text-[#121214] [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
+            style={getEngravingSurfaceStyle(bundle.jewelry.constraints, 224)}
+            dangerouslySetInnerHTML={{ __html: bundle.compositeSvg }}
+          />
+        </div>
+        <p className="text-[10px] text-[#8A857C] text-center">
+          Preview at physical aspect ratio ({bundle.jewelry.constraints.safeWidthMm}×
+          {bundle.jewelry.constraints.safeHeightMm} mm) — matches laser output scale.
+        </p>
       </div>
 
       {channel === 'pos' && isActiveLaserStatus(fulfillmentStatus) ? (
         <div className="p-4 bg-white border border-[#E8E2D5] rounded-xl text-[#121214] space-y-3">
           <div className="flex items-center space-x-3">
-            <RefreshCw className="w-5 h-5 text-[#C5A059] flex-shrink-0 animate-spin" />
+            <RefreshCw
+              className={`w-5 h-5 text-[#C5A059] flex-shrink-0 ${
+                fulfillmentStatus === 'marking' && !markDecisionSent ? 'animate-spin' : ''
+              }`}
+            />
             <div>
               <div className="font-bold text-xs">
                 {fulfillmentStatus === 'marking'
@@ -171,34 +219,42 @@ export const AssociateOrderPanel: React.FC<AssociateOrderPanelProps> = ({
                   : 'Waiting for laser station'}
               </div>
               <p className="text-[11px] text-[#6E6A63]">
-                Place jewelry flat in the fixture, verify red-light alignment, then approve mark.
+                {fulfillmentStatus === 'marking'
+                  ? 'Check red-light alignment on the jewelry. Approve only when ready to fire the laser.'
+                  : 'LaserAgent will pick up this order shortly.'}
               </p>
             </div>
           </div>
           {canConfirmMark ? (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={isConfirming}
-                onClick={() => handleMarkDecision('approve')}
-                className="flex-1 px-3 py-2 rounded-lg bg-[#121214] text-white text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
-              >
-                {isConfirming ? 'Sending…' : 'Approve Mark'}
-              </button>
-              <button
-                type="button"
-                disabled={isConfirming}
-                onClick={() => handleMarkDecision('reject')}
-                className="flex-1 px-3 py-2 rounded-lg border border-rose-200 text-rose-700 text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
-              >
-                Skip / Reject
-              </button>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={isConfirming}
+                  onClick={() => handleMarkDecision('approve')}
+                  className="flex-1 px-3 py-2 rounded-lg bg-[#121214] text-white text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
+                >
+                  {isConfirming ? 'Sending…' : 'Approve Mark'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isConfirming}
+                  onClick={() => handleMarkDecision('reject')}
+                  className="flex-1 px-3 py-2 rounded-lg border border-rose-200 text-rose-700 text-[11px] font-bold uppercase tracking-wide disabled:opacity-50"
+                >
+                  Reject Mark
+                </button>
+              </div>
+              <p className="text-[10px] text-[#8A857C] leading-relaxed">
+                <span className="font-semibold text-[#121214]">Reject Mark</span> — red light misaligned; skip this
+                attempt and requeue (order stays open).{' '}
+                <span className="font-semibold text-[#121214]">Cancel Order</span> — customer walks away; void the
+                whole engraving.
+              </p>
             </div>
           ) : null}
-          {markDecisionSent ? (
-            <p className="text-[11px] text-[#6E6A63]">
-              Decision sent: <span className="font-semibold text-[#121214]">{markDecisionSent}</span>. Waiting for agent…
-            </p>
+          {decisionFeedback ? (
+            <p className="text-[11px] text-[#6E6A63]">{decisionFeedback}</p>
           ) : null}
         </div>
       ) : null}
@@ -233,16 +289,17 @@ export const AssociateOrderPanel: React.FC<AssociateOrderPanelProps> = ({
               </p>
             </div>
           </div>
-          {canManageLaser ? (
-            <button
-              onClick={handleRequeue}
-              disabled={isRequeueing}
-              className="w-full py-3 bg-[#121214] hover:bg-[#C5A059] text-white font-bold uppercase tracking-[0.12em] text-xs rounded-full transition-colors disabled:opacity-50"
-            >
-              {isRequeueing ? 'Requeueing…' : 'Requeue for Laser'}
-            </button>
-          ) : null}
         </div>
+      ) : null}
+
+      {showRequeue ? (
+        <button
+          onClick={handleRequeue}
+          disabled={isRequeueing}
+          className="w-full py-3 bg-[#121214] hover:bg-[#C5A059] text-white font-bold uppercase tracking-[0.12em] text-xs rounded-full transition-colors disabled:opacity-50"
+        >
+          {isRequeueing ? 'Requeueing…' : 'Requeue for Laser'}
+        </button>
       ) : null}
 
       {canManageLaser &&

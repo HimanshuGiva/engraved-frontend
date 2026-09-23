@@ -13,7 +13,7 @@ import { GiftQrModal } from '../components/modals/GiftQrModal';
 import { TextModal } from '../components/modals/TextModal';
 import { ConfirmationScreen } from '../components/associate/ConfirmationScreen';
 import { SHAPE_PRESETS } from '../constants/shapes';
-import { getEngravingSurfaceAspect } from '../constants/engravingSurface';
+import { getJewelrySurfaceAspect } from '../constants/engravingSurface';
 import { ToolMode } from '../constants/tools';
 import { useCanvasHistory, useClearInvalidSelection } from '../hooks/useCanvasHistory';
 import { useStudioModals } from '../hooks/useStudioModals';
@@ -41,7 +41,7 @@ export default function StudioApp() {
   const [activeTool, setActiveTool] = useState<ToolMode>('select');
   const [placingShapeKind, setPlacingShapeKind] = useState<string | null>(null);
   const [eraserSize, setEraserSize] = useState(20);
-  const [drawSize, setDrawSize] = useState(2);
+  const [drawSize, setDrawSize] = useState(4);
   const [linkedMessageId, setLinkedMessageId] = useState<string | null>(null);
   const [savedBundle, setSavedBundle] = useState<SavedDesignBundle | null>(null);
   const propertiesPanelRef = useRef<HTMLDivElement>(null);
@@ -62,7 +62,7 @@ export default function StudioApp() {
   const modals = useStudioModals();
 
   const surfaceAspect = selectedJewelry
-    ? getEngravingSurfaceAspect(selectedJewelry.constraints.shape)
+    ? getJewelrySurfaceAspect(selectedJewelry.constraints)
     : 1;
 
   const clearSelection = useCallback(() => setSelectedElementId(null), []);
