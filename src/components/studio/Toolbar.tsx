@@ -70,7 +70,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onClear,
   eraserSize = 20,
   onEraserSizeChange,
-  drawSize = 2,
+  drawSize = 4,
   onDrawSizeChange,
 }) => {
   const [isShapeMenuOpen, setIsShapeMenuOpen] = useState(false);

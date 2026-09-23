@@ -1,6 +1,6 @@
 import { CanvasElement, JewelryItem, JewelryMaterial, isErasableLayer } from '../types';
 import { engravingTextFontSize, getEngravingFont } from '../constants/fonts';
-import { getEngravingSurfaceAspect } from '../constants/engravingSurface';
+import { getJewelrySurfaceAspect } from '../constants/engravingSurface';
 
 /** One eraser stroke in the target element's local 0–100 coordinate space. */
 export type EraserStroke = { content: string; strokeWidth: number; filled?: boolean };
@@ -357,7 +357,7 @@ async function buildCompositeLayers(
 ): Promise<CompositeLayers> {
   const sorted = [...elements].filter((el) => el.type !== 'eraser').sort((a, b) => a.zIndex - b.zIndex);
   const erasers = elements.filter((el) => el.type === 'eraser');
-  const surfaceAspect = getEngravingSurfaceAspect(jewelry.constraints.shape);
+  const surfaceAspect = getJewelrySurfaceAspect(jewelry.constraints);
 
   let vectorContent = '';
   let rasterContent = '';
@@ -427,7 +427,7 @@ function buildDisplayLayers(elements: CanvasElement[], surfaceAspect: number): C
 export function generateCompositeSvg(elements: CanvasElement[], jewelry: JewelryItem): string {
   const { maskDefs, vectorContent, rasterContent } = buildDisplayLayers(
     elements,
-    getEngravingSurfaceAspect(jewelry.constraints.shape)
+    getJewelrySurfaceAspect(jewelry.constraints)
   );
   return wrapProductionSvg(jewelry, maskDefs, vectorContent + rasterContent);
 }
@@ -446,8 +446,17 @@ export async function generateProductionSvg(
   return wrapProductionSvg(jewelry, maskDefs, vectorContent);
 }
 
+function svgRootSizeAttrs(jewelry: JewelryItem): string {
+  const w = jewelry.constraints.safeWidthMm;
+  const h = jewelry.constraints.safeHeightMm;
+  if (w > 0 && h > 0) {
+    return `width="${w}mm" height="${h}mm"`;
+  }
+  return 'width="100%" height="100%"';
+}
+
 function wrapProductionSvg(jewelry: JewelryItem, maskDefs: string, content: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none" overflow="visible">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" ${svgRootSizeAttrs(jewelry)} preserveAspectRatio="none" overflow="visible">
   <desc>GIVA Live-Engrave Production Vector Export - SKU: ${jewelry.sku} - Safe Area: ${jewelry.constraints.safeWidthMm}mm x ${jewelry.constraints.safeHeightMm}mm</desc>
   <defs>${maskDefs}
   </defs>
@@ -595,7 +604,7 @@ function buildRasterEtchFilter(id: string, palette: EtchPalette): string {
 export function generatePreviewCompositeSvg(elements: CanvasElement[], jewelry: JewelryItem): string {
   const { maskDefs, vectorContent, rasterContent } = buildDisplayLayers(
     elements,
-    getEngravingSurfaceAspect(jewelry.constraints.shape)
+    getJewelrySurfaceAspect(jewelry.constraints)
   );
 
   const palette = getEtchPalette(jewelry.material);
@@ -609,7 +618,7 @@ export function generatePreviewCompositeSvg(elements: CanvasElement[], jewelry: 
     ? `\n  <g filter="url(#preview-raster-etch)">${rasterContent}\n  </g>`
     : '';
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none" overflow="visible">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" ${svgRootSizeAttrs(jewelry)} preserveAspectRatio="none" overflow="visible">
   <desc>GIVA Live-Engrave Preview Simulation - SKU: ${jewelry.sku}</desc>
   <defs>${maskDefs}${vectorFilter}${rasterFilter}
   </defs>
@@ -627,11 +636,19 @@ export function generatePreviewCompositeSvg(elements: CanvasElement[], jewelry: 
 export function downloadFile(content: string, filename: string, mimeType: string = 'image/svg+xml') {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
+  downloadUrl(url, filename);
+  URL.revokeObjectURL(url);
+}
+
+export function downloadDataUrl(dataUrl: string, filename: string) {
+  downloadUrl(dataUrl, filename);
+}
+
+function downloadUrl(url: string, filename: string) {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }

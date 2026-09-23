@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CanvasElement, CanvasRegion, JewelryItem, isErasableLayer } from '../../types';
-import { ENGRAVING_SURFACE_CLASS } from '../../constants/engravingSurface';
+import { getEngravingSurfaceStyle } from '../../constants/engravingSurface';
 import { engravingTextFontSize, getEngravingFont } from '../../constants/fonts';
 import { pointsToSvgPath, buildEraserMaskDataUri, buildFreehandSessionData, eraserStrokesFromElements, EraserStroke, canvasPointsToLocalSubpaths, subpathsToSvgPath } from '../../utils/svgUtils';
 import { normalizeCanvasRegion } from '../../utils/canvasCapture';
@@ -99,9 +99,10 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   onOpenUploadModal,
   eraserSize = 20,
   placingShapeKind = null,
-  drawSize = 2,
+  drawSize = 4,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const surfaceStyle = getEngravingSurfaceStyle(jewelry.constraints);
   const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
   const [currentDrawPoints, setCurrentDrawPoints] = useState<{ x: number; y: number }[]>([]);
   const drawPointsRef = useRef<{ x: number; y: number }[]>([]);
@@ -363,8 +364,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     setDraggingId(null);
   };
 
-  // Engraving surface dimensions — shared with preview so layout matches 1:1
-  const getShapeStyle = () => ENGRAVING_SURFACE_CLASS[jewelry.constraints.shape];
+  // Engraving surface dimensions — shared with preview/export so layout matches 1:1
 
   // Freehand Drawing pointer events
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -550,7 +550,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
           rotation: 0,
           zIndex: elements.length + 1,
           content: SHAPE_PRESETS[placingShapeKind],
-          strokeWidth: 2,
+          strokeWidth: 4,
         };
         onAddElement(newEl, true);
       }
@@ -737,8 +737,11 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                 : activeTool === 'erase'
                 ? ''
                 : 'cursor-default'
-            } ${getShapeStyle()}`}
-            style={activeTool === 'erase' ? { cursor: ERASER_CURSOR } : undefined}
+            }`}
+            style={{
+              ...surfaceStyle,
+              ...(activeTool === 'erase' ? { cursor: ERASER_CURSOR } : {}),
+            }}
           >
             {/* Rendered Elements Layer — eraser elements never get their own
                box here; they only ever appear as a mask applied to the
@@ -952,7 +955,7 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
                 }}
               >
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full pointer-events-none">
-                  <path d={SHAPE_PRESETS[placingShapeKind]} fill="none" stroke="#121214" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d={SHAPE_PRESETS[placingShapeKind]} fill="none" stroke="#121214" strokeWidth={4} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
             )}

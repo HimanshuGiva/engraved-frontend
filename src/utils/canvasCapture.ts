@@ -1,4 +1,9 @@
-import { CanvasElement, CanvasRegion, isErasableLayer } from '../types';
+import { getJewelrySurfaceAspect } from '../constants/engravingSurface';
+import {
+  CUSTOMER_DOWNLOAD_BACKGROUND,
+  getCustomerDownloadPixelSize,
+} from './customerDownloadSvg';
+import { CanvasElement, CanvasRegion, EngravingConstraints, isErasableLayer } from '../types';
 import {
   buildLayerMask,
   embedArtworkMarkup,
@@ -395,6 +400,40 @@ export async function rasterizeSvgMarkupToPng(svgMarkup: string, size = CAPTURE_
     ? extractRootSvg(svgMarkup)
     : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${svgMarkup}</svg>`;
   return rasterizeSvgToPng(normalized, size, size);
+}
+
+/** Customer-facing PNG export — preserves SKU aspect ratio and adds a studio background. */
+export async function rasterizeProductionSvgToPng(
+  svgMarkup: string,
+  constraints: Pick<EngravingConstraints, 'safeWidthMm' | 'safeHeightMm' | 'shape'>
+): Promise<string> {
+  const { w, h } = getCustomerDownloadPixelSize(constraints);
+  const svg = extractRootSvg(svgMarkup);
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const blobUrl = URL.createObjectURL(blob);
+  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
+  try {
+    let img: HTMLImageElement;
+    try {
+      img = await loadImage(blobUrl);
+    } catch {
+      img = await loadImage(dataUrl);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Could not create canvas context');
+    }
+    ctx.fillStyle = CUSTOMER_DOWNLOAD_BACKGROUND;
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
 }
 
 /** Read a File/Blob as a data URL (for raster uploads sent to backend enhance). */

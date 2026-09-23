@@ -1,7 +1,10 @@
+import type { CSSProperties } from 'react';
 import { JewelryItem } from '../types';
 
 /** Shared engraving-area frame — canvas and preview must use identical sizing. */
 export type EngravingShape = JewelryItem['constraints']['shape'];
+
+type JewelryConstraints = JewelryItem['constraints'];
 
 export const ENGRAVING_SURFACE_CLASS: Record<EngravingShape, string> = {
   circle: 'w-72 h-72 sm:w-[420px] sm:h-[420px] rounded-full',
@@ -37,6 +40,44 @@ export const ENGRAVING_SURFACE_ASPECT: Record<EngravingShape, number> = {
 
 export function getEngravingSurfaceAspect(shape: EngravingShape): number {
   return ENGRAVING_SURFACE_ASPECT[shape];
+}
+
+/**
+ * Physical width÷height from catalog engraving_mm — used for canvas, preview,
+ * export, and download so all stages share one aspect ratio per SKU.
+ */
+export function getJewelrySurfaceAspect(
+  constraints: Pick<JewelryConstraints, 'safeWidthMm' | 'safeHeightMm' | 'shape'>
+): number {
+  const { safeWidthMm, safeHeightMm, shape } = constraints;
+  if (safeWidthMm > 0 && safeHeightMm > 0) {
+    return safeWidthMm / safeHeightMm;
+  }
+  return ENGRAVING_SURFACE_ASPECT[shape];
+}
+
+/** Max pendant height (px) per shape — width is derived from catalog aspect. */
+const SURFACE_MAX_HEIGHT_PX: Record<EngravingShape, number> = {
+  circle: 420,
+  squircle: 420,
+  bar: 416,
+  heart: 420,
+  oval: 360,
+  rectangle: 420,
+};
+
+/** Inline surface frame so canvas matches preview and exported SVG geometry. */
+export function getEngravingSurfaceStyle(
+  constraints: JewelryConstraints,
+  maxHeightPx = SURFACE_MAX_HEIGHT_PX[constraints.shape]
+): CSSProperties {
+  const aspect = getJewelrySurfaceAspect(constraints);
+  return {
+    aspectRatio: `${aspect}`,
+    width: `min(100%, calc(${maxHeightPx}px * ${aspect}))`,
+    maxHeight: `${maxHeightPx}px`,
+    borderRadius: ENGRAVING_SURFACE_RADIUS[constraints.shape],
+  };
 }
 
 /** Pixel width÷height of a canvas % box on this jewelry surface. */
